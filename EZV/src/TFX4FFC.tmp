@@ -1,0 +1,984 @@
+/*
+*/
+#include "common.h"
+#include "context_setup.h"
+#include "main.h"
+
+//
+// Construction/Destruction
+//
+CContextSetup::CContextSetup(GR_WINDOW_ID wid, GR_GC_ID gc)
+	: CContext(wid, gc)
+{
+	m_fMicroWaveMonitorRunning = FALSE;
+
+	m_isAdcValueLongKeyPlus = FALSE;
+	m_isAdcValueLongKeyMinus = FALSE;
+
+	m_isWaitForResponse = FALSE;
+	m_isRequestReserve = FALSE;
+
+	m_nWallPadKeyPage = 0;
+
+	m_nSetupStep = CONTEXT_SETUP_STEP_SELECT;
+}
+
+CContextSetup::~CContextSetup()
+{
+}
+
+//
+// Member Function
+//
+void CContextSetup::Init()
+{
+	CContext::Init();
+
+	SetRect(&m_rcTitle, SCR_WIDTH/2-TITLE_WIDTH/2, 20, TITLE_WIDTH, TITLE_HEIGHT);
+	SetRect(&m_rcArea, BUTTON_WIDTH+20, TITLE_HEIGHT+40, SCR_WIDTH - (BUTTON_WIDTH+20)*2, BUTTON_VCENTER_3-(TITLE_HEIGHT+40)+BUTTON_HEIGHT/2);
+
+	SetRect(&m_rcButton[0], 0, BUTTON_VCENTER_1-BUTTON_HEIGHT/2, BUTTON_WIDTH, BUTTON_HEIGHT);
+	SetRect(&m_rcButton[1], 0, BUTTON_VCENTER_2-BUTTON_HEIGHT/2, BUTTON_WIDTH, BUTTON_HEIGHT);
+	SetRect(&m_rcButton[2], 0, BUTTON_VCENTER_3-BUTTON_HEIGHT/2, BUTTON_WIDTH, BUTTON_HEIGHT);
+	SetRect(&m_rcButton[3], SCR_WIDTH-1-BUTTON_WIDTH, BUTTON_VCENTER_1-BUTTON_HEIGHT/2, BUTTON_WIDTH, BUTTON_HEIGHT);
+	SetRect(&m_rcButton[4], SCR_WIDTH-1-BUTTON_WIDTH, BUTTON_VCENTER_2-BUTTON_HEIGHT/2, BUTTON_WIDTH, BUTTON_HEIGHT);
+	SetRect(&m_rcButton[5], SCR_WIDTH-1-BUTTON_WIDTH, BUTTON_VCENTER_3-BUTTON_HEIGHT/2, BUTTON_WIDTH, BUTTON_HEIGHT);
+
+	SetRect(&m_rcGraph, m_rcArea.x+20, m_rcArea.y+20, m_rcArea.w-40, m_rcArea.h-40);
+
+	m_pixmapArea  = GrNewPixmap(m_rcArea.w-2, m_rcArea.h-2, NULL);	//for WallPad Serial Dump
+	m_pixmapGraph = GrNewPixmap(m_rcGraph.w, m_rcGraph.h, NULL);	//for Microwave Graph
+}
+
+void CContextSetup::DeInit()
+{
+	GrDestroyWindow(m_pixmapGraph);
+	GrDestroyWindow(m_pixmapArea);
+
+	CContext::DeInit();
+}
+
+void CContextSetup::Draw(UINT nContextNum)
+{
+	RECT rcText;
+
+	if(m_gc_parent==0) return;
+
+	DBGMSGC(DBG_SETUP_MODE, "++ [%d]\r\n", nContextNum);
+
+	//전체화면을 검정색으로 칠한다.
+	DrawRect(0, 0, g_scr_info.cols, g_scr_info.rows, g_wid, g_gc, BLACK, TRUE);
+
+	//타이틀 박스
+	DrawRect2(&m_rcTitle, g_wid, g_gc, WHITE, FALSE);
+
+	//표시영역
+	DrawRect2(&m_rcArea, g_wid, g_gc, BLACK, TRUE);		//검정색으로 지우고
+	DrawRect2(&m_rcArea, g_wid, g_gc, WHITE, FALSE);	//흰색으로 박스그리고
+
+	//우측 버튼 박스
+	DrawRect2(&m_rcButton[BUTTON_RT], g_wid, g_gc, WHITE, FALSE);
+	DrawRect2(&m_rcButton[BUTTON_RM], g_wid, g_gc, WHITE, FALSE);
+	DrawRect2(&m_rcButton[BUTTON_RB], g_wid, g_gc, WHITE, FALSE);
+
+	if(m_nSetupStep==CONTEXT_SETUP_STEP_SELECT)
+	{
+		//우측버튼
+		DrawTextRect("이전", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+			SetRect(&rcText, m_rcButton[BUTTON_RT].x, m_rcButton[BUTTON_RT].y+m_rcButton[BUTTON_RT].h+2, m_rcButton[BUTTON_RT].w, 16);
+			DrawTextRect("VolUp\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		DrawTextRect("다음", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+			SetRect(&rcText, m_rcButton[BUTTON_RM].x, m_rcButton[BUTTON_RM].y+m_rcButton[BUTTON_RM].h+2, m_rcButton[BUTTON_RM].w, 16);
+			DrawTextRect("VolDn\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+
+		if(nContextNum != CONTEXT_SETUP_DOOR)
+		{
+			DrawTextRect("설정", g_wid, g_gc, &m_rcButton[BUTTON_RB], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RB].x, m_rcButton[BUTTON_RB].y+m_rcButton[BUTTON_RB].h+2, m_rcButton[BUTTON_RB].w, 16);
+				DrawTextRect("VolDn Long\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		}
+	}
+	else
+	{
+		DrawTextRect("완료", g_wid, g_gc, &m_rcButton[BUTTON_RB], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+			SetRect(&rcText, m_rcButton[BUTTON_RB].x, m_rcButton[BUTTON_RB].y+m_rcButton[BUTTON_RB].h+2, m_rcButton[BUTTON_RB].w, 16);
+			DrawTextRect("VolUp Long\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+	}
+
+	switch(nContextNum)
+	{
+	case CONTEXT_SETUP_INIT:
+		break;
+	case CONTEXT_SETUP_LED:	//LED
+		//Title
+		DrawTextRect("LED", g_wid, g_gc, &m_rcTitle, g_font, 36, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		//우측버튼
+		if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+		{
+			DrawTextRect("ON", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RT].x, m_rcButton[BUTTON_RT].y+m_rcButton[BUTTON_RT].h+2, m_rcButton[BUTTON_RT].w, 16);
+				DrawTextRect("VolUp\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+			DrawTextRect("OFF", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RM].x, m_rcButton[BUTTON_RM].y+m_rcButton[BUTTON_RM].h+2, m_rcButton[BUTTON_RM].w, 16);
+				DrawTextRect("VolDn\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		}
+		break;
+	case CONTEXT_SETUP_BACKLIGHT:
+		//Title
+		DrawTextRect("BackLight", g_wid, g_gc, &m_rcTitle, g_font, 36, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		//우측버튼
+		if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+		{
+			DrawTextRect("ON", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RT].x, m_rcButton[BUTTON_RT].y+m_rcButton[BUTTON_RT].h+2, m_rcButton[BUTTON_RT].w, 16);
+				DrawTextRect("VolUp\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+			DrawTextRect("OFF", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RM].x, m_rcButton[BUTTON_RM].y+m_rcButton[BUTTON_RM].h+2, m_rcButton[BUTTON_RM].w, 16);
+				DrawTextRect("VolDn\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		}
+		break;
+	case CONTEXT_SETUP_RELAY:
+		//Title
+		DrawTextRect("Relay", g_wid, g_gc, &m_rcTitle, g_font, 36, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		//우측버튼
+		if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+		{
+			DrawTextRect("ON", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RT].x, m_rcButton[BUTTON_RT].y+m_rcButton[BUTTON_RT].h+2, m_rcButton[BUTTON_RT].w, 16);
+				DrawTextRect("VolUp\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+			DrawTextRect("OFF", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RM].x, m_rcButton[BUTTON_RM].y+m_rcButton[BUTTON_RM].h+2, m_rcButton[BUTTON_RM].w, 16);
+				DrawTextRect("VolDn\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		}
+		break;
+	case CONTEXT_SETUP_DOOR:
+		//Title
+		DrawTextRect("Door", g_wid, g_gc, &m_rcTitle, g_font, 36, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		//우측버튼 : 표시없음
+		if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+		{
+			DrawTextRect("", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+			DrawTextRect("", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+		}
+
+		if(g_gpio_mtm.GetGpioInputPin(GPIO_DOOR_DETECT)==HIGH)
+			DrawTextRect2("문이 닫혔습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+		else
+			DrawTextRect2("문이 열렸습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+		break;
+	case CONTEXT_SETUP_SOUND:
+		//Title
+		DrawTextRect("Sound", g_wid, g_gc, &m_rcTitle, g_font, 36, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		//우측버튼
+		if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+		{
+			DrawTextRect("증가", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RT].x, m_rcButton[BUTTON_RT].y+m_rcButton[BUTTON_RT].h+2, m_rcButton[BUTTON_RT].w, 16);
+				DrawTextRect("VolUp\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+			DrawTextRect("감소", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RM].x, m_rcButton[BUTTON_RM].y+m_rcButton[BUTTON_RM].h+2, m_rcButton[BUTTON_RM].w, 16);
+				DrawTextRect("VolDn\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		}
+		break;
+	case CONTEXT_SETUP_MICROWAVE:
+		//Title
+		DrawTextRect("MicroWave", g_wid, g_gc, &m_rcTitle, g_font, 36, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		//우측버튼
+		if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+		{
+			DrawTextRect("증가", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RT].x, m_rcButton[BUTTON_RT].y+m_rcButton[BUTTON_RT].h+2, m_rcButton[BUTTON_RT].w, 16);
+				DrawTextRect("VolUp (L=빠르게)\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+			DrawTextRect("감소", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RM].x, m_rcButton[BUTTON_RM].y+m_rcButton[BUTTON_RM].h+2, m_rcButton[BUTTON_RM].w, 16);
+				DrawTextRect("VolDn (L=빠르게)\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		}
+
+		//그래프
+		DrawLine(m_rcGraph.x-1, m_rcGraph.y, m_rcGraph.x-1, m_rcGraph.y+m_rcGraph.h+1, g_wid, g_gc, DKGRAY, FALSE);
+		DrawLine(m_rcGraph.x-1, m_rcGraph.y+m_rcGraph.h+1, m_rcGraph.x+m_rcGraph.w+1, m_rcGraph.y+m_rcGraph.h+1, g_wid, g_gc, DKGRAY, FALSE);
+
+		SetRect(&rcText, m_rcArea.x, m_rcGraph.y, m_rcGraph.x-m_rcArea.x-2, 12);
+		DrawTextRect("1023", g_wid, g_gc, &rcText, g_font, 8, WHITE, TXT_HALIGN_RIGHT|TXT_VALIGN_MIDDLE);
+		SetRect(&rcText, m_rcArea.x, m_rcGraph.y+m_rcGraph.h-6, m_rcGraph.x-m_rcArea.x-2, 12);
+		DrawTextRect("0", g_wid, g_gc, &rcText, g_font, 8, WHITE, TXT_HALIGN_RIGHT|TXT_VALIGN_MIDDLE);
+		break;
+	case CONTEXT_SETUP_WALLPAD:
+		//Title
+		DrawTextRect("WallPad", g_wid, g_gc, &m_rcTitle, g_font, 36, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+		{
+			//우측버튼
+			switch(m_nWallPadKeyPage)
+			{
+			case CONTEXT_SETUP_WALLPAD_PAGE_LIGHT_OFF:		//일괄소등
+				DrawTextRect("일괄소등", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			case CONTEXT_SETUP_WALLPAD_PAGE_GAS_CUT:		//가스차단
+				DrawTextRect("가스차단", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_ON:	//보안설정
+				DrawTextRect("보안설정", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_OFF:	//보안해제
+				DrawTextRect("보안해제", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			case CONTEXT_SETUP_WALLPAD_PAGE_WEATHER_INFO:	//날씨요청
+				DrawTextRect("날씨요청", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			case CONTEXT_SETUP_WALLPAD_PAGE_PARKING_INFO:	//주차요청
+				DrawTextRect("주차요청", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			case CONTEXT_SETUP_WALLPAD_PAGE_ELV_INFO:		//E/V요청
+				DrawTextRect("E/V요청", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			case CONTEXT_SETUP_WALLPAD_PAGE_ELV_CALL:		//E/V호출
+				DrawTextRect("E/V호출", g_wid, g_gc, &m_rcButton[BUTTON_RT], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				break;
+			default:
+				break;
+			}
+
+			SetRect(&rcText, m_rcButton[BUTTON_RT].x, m_rcButton[BUTTON_RT].y+m_rcButton[BUTTON_RT].h+2, m_rcButton[BUTTON_RT].w, 16);
+			DrawTextRect("VolUp\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+
+			DrawTextRect("명령전환", g_wid, g_gc, &m_rcButton[BUTTON_RM], g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+				SetRect(&rcText, m_rcButton[BUTTON_RM].x, m_rcButton[BUTTON_RM].y+m_rcButton[BUTTON_RM].h+2, m_rcButton[BUTTON_RM].w, 16);
+				DrawTextRect("VolDn (L=직접명령)\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		}
+
+		GrCopyArea(g_wid, g_gc, m_rcArea.x+1, m_rcArea.y+1, m_rcArea.w-2, m_rcArea.h-2, m_pixmapArea, 0, 0, MWROP_SRCCOPY);
+		break;
+	}
+
+	//하단안내
+	SetRect(&rcText, m_rcArea.x, m_rcArea.y+m_rcArea.h+2, m_rcArea.w, 32);
+	DrawTextRect("S:짧게누름,  L:길게누름\0", g_wid, g_gc, &rcText, g_font, 24, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_MIDDLE);
+
+	if(g_setup_data.m_SetupData.wallpad_type == WALLPAD_TYPE_SHN)
+	{
+		if(nContextNum==CONTEXT_SETUP_WALLPAD)
+		{
+			SetRect(&rcText, m_rcArea.x+200, m_rcArea.y+m_rcArea.h+2, m_rcArea.w-200, 32);
+			DrawTextRect("(FreeData패킷생략)\0", g_wid, g_gc, &rcText, g_font, 12, WHITE, TXT_HALIGN_RIGHT|TXT_VALIGN_MIDDLE);
+		}
+	}
+
+//	LeaveCS();
+
+	DBGMSGC(DBG_SETUP_MODE, "--\r\n");
+}
+
+void CContextSetup::Proc(UINT nContextNum)
+{
+	char szText[128] = {0,};
+	RECT rcText;
+
+	DBGMSGC(DBG_SETUP_MODE, "++ [%d]\r\n", nContextNum);
+
+//	EnterCS();
+
+	switch(nContextNum)
+	{
+	case CONTEXT_SETUP_INIT:
+		g_timer.KillTimer(BACK_LIGHT_TIMER);
+		g_microwave.StopMeasure();				//MicrowaveHandler에서의 측정을 충단시킴
+
+		ChangeContext(1);
+		break;
+	case CONTEXT_SETUP_LED:			//LED
+		break;
+	case CONTEXT_SETUP_BACKLIGHT:	//BackLight
+		break;
+	case CONTEXT_SETUP_RELAY:		//Relay
+		break;
+	case CONTEXT_SETUP_DOOR:		//Door
+		break;
+	case CONTEXT_SETUP_SOUND:		//Sound
+		sprintf(szText, "Volume Level: %d\0", g_setup_data.m_SetupData.volume);
+		SetRect(&rcText, m_rcArea.x, m_rcArea.y+m_rcArea.h/2-16, m_rcArea.w, 32);
+		DrawTextRect(szText, g_wid, g_gc, &rcText, g_font, 24, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		SetRect(&rcText, m_rcArea.x, m_rcArea.y+m_rcArea.h-32, m_rcArea.w, 32);
+		DrawTextRect("*가능한 범위: 0~8\0", g_wid, g_gc, &rcText, g_font, 18, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+		break;
+	case CONTEXT_SETUP_MICROWAVE:	//MicroWave
+		break;
+	case CONTEXT_SETUP_WALLPAD:		//WallPad
+		g_isContextSetupWallPad = TRUE;
+		break;
+	}
+
+//	LeaveCS();
+
+	DBGMSGC(DBG_SETUP_MODE, "--\r\n");
+}
+
+void CContextSetup::TimerProc(UINT idTimer)
+{
+}
+
+void CContextSetup::RecvProc(UCHAR *pPacket)
+{
+	if(pPacket==NULL)		return;
+	if(m_nContextNum != 6)	return;		//WallPad테스트가 아닌경우는 처리하지 않음
+
+	DBGMSGC(DBG_SETUP_MODE, "++\r\n");
+
+	switch(g_setup_data.m_SetupData.wallpad_type)
+	{
+	case WALLPAD_TYPE_DEFAULT:
+	//	RecvProc_KCM(pPacket);
+		RecvProc_HDT(pPacket);
+		break;
+	case WALLPAD_TYPE_HDT:
+		RecvProc_HDT(pPacket);
+		break;
+	case WALLPAD_TYPE_SHN:
+		RecvProc_SHN(pPacket);
+		break;
+	case WALLPAD_TYPE_KCM:
+		RecvProc_KCM(pPacket);
+		break;
+	default:
+		DBGMSG(DBG_SETUP_MODE, "Invalid WallPad Type\r\n");
+		return;
+	}
+
+	DBGMSGC(DBG_SETUP_MODE, "--\r\n");
+}
+
+void CContextSetup::ThreadProc()
+{
+	static int y1=0, y2=0, ySetupValue;
+	UINT nAdcValue;
+
+	char szText[64] = {0,};
+	RECT rcText;
+
+	if(m_nContextNum == CONTEXT_SETUP_MICROWAVE)	//MicroWave
+	{
+		if(m_isAdcValueLongKeyPlus)
+		{
+			if(g_setup_data.m_SetupData.adc_value < MAX_ADC_VALUE)
+			{
+				g_setup_data.m_SetupData.adc_value++;
+			}
+		}
+		if(m_isAdcValueLongKeyMinus)
+		{
+			if(g_setup_data.m_SetupData.adc_value > 0)
+			{
+				g_setup_data.m_SetupData.adc_value--;
+			}
+		}
+
+		nAdcValue = g_microwave.GetAdcSamplingValue();
+		y2 = (int)(m_rcGraph.h*nAdcValue/1023.0);
+		if(y1==0) y1 = y2;
+
+		//그래프 Shift
+		GrCopyArea(m_pixmapGraph, g_gc, 0, 0, m_rcGraph.w-GRAPH_SPEED, m_rcGraph.h, m_pixmapGraph, GRAPH_SPEED, 0, MWROP_SRCCOPY);
+
+		//Shift되고난 부분 지우기 (우측영역)
+		DrawRect(m_rcGraph.w-GRAPH_SPEED, 0, GRAPH_SPEED, m_rcGraph.h, m_pixmapGraph, g_gc, BLACK, TRUE);
+		DrawRect(m_rcGraph.x+m_rcGraph.w-GRAPH_SPEED, m_rcGraph.y, GRAPH_SPEED, m_rcGraph.h, g_wid, g_gc, BLACK, TRUE);
+
+		//그래프 그리기
+		DrawLine(m_rcGraph.w-GRAPH_SPEED, m_rcGraph.h-y1, m_rcGraph.w, m_rcGraph.h-y2, m_pixmapGraph, g_gc, CYAN, FALSE);
+
+		//그래프 옮기기
+		GrCopyArea(g_wid, g_gc, m_rcGraph.x, m_rcGraph.y, m_rcGraph.w, m_rcGraph.h, m_pixmapGraph, 0, 0, MWROP_SRCCOPY);
+
+		//설정값 표시(노란라인)
+		ySetupValue = (int)(m_rcGraph.h*g_setup_data.m_SetupData.adc_value/1023.0);
+		DrawLine(m_rcGraph.x, m_rcGraph.y+m_rcGraph.h-ySetupValue, 
+				 m_rcGraph.x+m_rcGraph.w, m_rcGraph.y+m_rcGraph.h-ySetupValue, 
+				 g_wid, g_gc, YELLOW, FALSE);
+
+		//텍스트 표시
+		sprintf(szText, "측정값: %04d,  설정값: %04d\0", nAdcValue, g_setup_data.m_SetupData.adc_value);
+		SetRect(&rcText, m_rcGraph.x+1, m_rcArea.y+5, m_rcGraph.w-2, 32);
+		DrawTextRect2(szText, g_wid, g_gc, &rcText, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+		y1 = y2;
+	}
+	else if( (y1>0) || (y2>0) )
+	{
+		DrawRect(0, 0, m_rcGraph.w, m_rcGraph.h, m_pixmapGraph, g_gc, BLACK, TRUE);
+		y1 = y2 = 0;
+	}
+}
+
+void CContextSetup::ButtonDown(UINT usGpioFlag, UINT usEventEnum)
+{
+//	printf("+CContextSetup::ButtonDown\r\n");
+
+	if(usEventEnum == MTM_GPIO_BUTTON_LONG)
+	{
+		if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_TOP)|BIT_FLAG(GPIO_FRONT_RIGHT_BOTTOM)) ||
+			CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_REAR_VOL_UP)|BIT_FLAG(GPIO_REAR_VOL_DOWN)) )
+		{
+			g_setup_data.SaveSetupData();
+			g_state.ChangeState(STATE_WEATHER);
+			g_timer.SetTimer(BACK_LIGHT_TIMER, BACK_LIGHT_TIME, NULL, "LCD BackLight Timer");
+			g_isContextSetupWallPad = FALSE;
+			g_microwave.StartMeasure();
+		}
+		else if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_TOP)) )
+		{
+			if(m_nSetupStep == CONTEXT_SETUP_STEP_PAGE)
+			{
+				if(m_nContextNum==CONTEXT_SETUP_MICROWAVE)
+				{
+					m_isAdcValueLongKeyPlus = TRUE;
+				}
+			}
+		}
+		else if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_MIDDLE)) )
+		{
+			if(m_nSetupStep == CONTEXT_SETUP_STEP_PAGE)
+			{
+				if(m_nContextNum==CONTEXT_SETUP_MICROWAVE)
+				{
+					m_isAdcValueLongKeyMinus = TRUE;
+				}
+				else if(m_nContextNum==CONTEXT_SETUP_WALLPAD)
+				{
+					switch(m_nWallPadKeyPage)
+					{
+					case CONTEXT_SETUP_WALLPAD_PAGE_LIGHT_OFF:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestLightSet(TRUE);		//소등
+						}
+					//	RequestDirect(SNS_CMD_LAMP_ONOFF_REQ, 1);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_GAS_CUT:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestGasCut();
+						}
+					//	RequestDirect(SNS_CMD_GAS_OFF_REQ, 1);		//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_ON:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestSecuritySet(TRUE);
+						}
+					//	RequestDirect(SNS_CMD_OUT_ONOFF_REQ, 1);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_OFF:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestSecuritySet(FALSE);
+						}
+					//	RequestDirect(SNS_CMD_OUT_ONOFF_REQ, 0);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_WEATHER_INFO:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestWeatherInfo();
+						}
+					//	RequestDirect(SNS_CMD_WEATHER_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_PARKING_INFO:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestParingInfo();
+						}
+					//	RequestDirect(SNS_CMD_PARKING_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_ELV_INFO:
+					//	RequestDirect(SNS_CMD_ELEVATOR_STAT_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_ELV_CALL:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestElevatorCall();
+						}
+					//	RequestDirect(SNS_CMD_ELEVATOR_CALL);
+						break;
+					}
+				}
+			}
+		}
+//		else if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_BOTTOM)) )
+//		{
+//		}
+		else if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_REAR_VOL_UP)) )
+		{
+			if(m_nSetupStep==CONTEXT_SETUP_STEP_PAGE)
+			{
+				if(m_nContextNum==CONTEXT_SETUP_MICROWAVE)
+				{
+					m_isAdcValueLongKeyPlus = TRUE;
+				}
+				else if(m_nContextNum != CONTEXT_SETUP_DOOR)
+				{
+					m_nSetupStep = CONTEXT_SETUP_STEP_SELECT;
+					ChangeContext(m_nContextNum);
+				}
+			}
+		}
+		else if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_REAR_VOL_DOWN)) )
+		{
+			if(m_nSetupStep==CONTEXT_SETUP_STEP_SELECT)
+			{
+				if(m_nContextNum != CONTEXT_SETUP_DOOR)
+				{
+					m_nSetupStep = CONTEXT_SETUP_STEP_PAGE;
+					ChangeContext(m_nContextNum);
+				}
+			}
+			else 
+			{
+				if(m_nContextNum==CONTEXT_SETUP_MICROWAVE)
+				{
+					m_isAdcValueLongKeyMinus = TRUE;
+				}
+				else if(m_nContextNum==CONTEXT_SETUP_WALLPAD)
+				{
+					switch(m_nWallPadKeyPage)
+					{
+					case CONTEXT_SETUP_WALLPAD_PAGE_LIGHT_OFF:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestLightSet(FALSE);		//점등
+						}
+					//	RequestDirect(SNS_CMD_LAMP_ONOFF_REQ, 1);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_GAS_CUT:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestGasCut();
+						}
+					//	RequestDirect(SNS_CMD_GAS_OFF_REQ, 1);		//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_ON:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestSecuritySet(TRUE);
+						}
+					//	RequestDirect(SNS_CMD_OUT_ONOFF_REQ, 1);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_OFF:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestSecuritySet(FALSE);
+						}
+					//	RequestDirect(SNS_CMD_OUT_ONOFF_REQ, 0);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_WEATHER_INFO:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestWeatherInfo();
+						}
+					//	RequestDirect(SNS_CMD_WEATHER_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_PARKING_INFO:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestParingInfo();
+						}
+					//	RequestDirect(SNS_CMD_PARKING_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_ELV_INFO:
+					//	RequestDirect(SNS_CMD_ELEVATOR_STAT_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_ELV_CALL:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestElevatorCall();
+						}
+					//	RequestDirect(SNS_CMD_ELEVATOR_CALL);
+						break;
+					}
+				}
+			}
+		}
+	}
+
+//	printf("-CContextSetup::ButtonDown\r\n");
+}
+
+void CContextSetup::ButtonUp(UINT usGpioFlag, UINT usEventEnum)
+{
+	char szText[128] = {0,};
+	RECT rcText;
+
+//	printf("+CContextSetup::ButtonUp\r\n");
+
+	if(usEventEnum == MTM_GPIO_STATE_CHANGE)
+	{
+		if(m_nContextNum == CONTEXT_SETUP_DOOR)
+		{
+			ChangeContext(m_nContextNum);
+		}
+	}
+	else if(usEventEnum == MTM_GPIO_BUTTON_UP)
+	{
+		//설정항목 선택모드
+		if(m_nSetupStep == CONTEXT_SETUP_STEP_SELECT)
+		{
+			if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_TOP)) ||			//이전
+				CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_REAR_VOL_UP)) )
+			{
+				if(m_nContextNum == CONTEXT_SETUP_LED)
+				{
+					//WallPad용 픽셀맵 클리어
+					DrawRect(m_rcArea.x+1, m_rcArea.y+1, m_rcArea.w-2, m_rcArea.h-2, m_pixmapArea, g_gc, BLACK, TRUE);
+					g_isContextSetupWallPad = TRUE;
+					ChangeContext(CONTEXT_SETUP_WALLPAD);
+				}
+				else
+				{
+					g_isContextSetupWallPad = FALSE;
+					ChangeContext(m_nContextNum-1);
+				}
+			}
+			else if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_MIDDLE)) ||		//다음
+					 CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_REAR_VOL_DOWN)) )
+			{
+				if(m_nContextNum == CONTEXT_SETUP_WALLPAD)
+				{
+					g_isContextSetupWallPad = FALSE;
+					ChangeContext(CONTEXT_SETUP_LED);
+				}
+				else if(m_nContextNum == CONTEXT_SETUP_MICROWAVE)
+				{
+					//WallPad용 픽셀맵 클리어
+					DrawRect(m_rcArea.x+1, m_rcArea.y+1, m_rcArea.w-2, m_rcArea.h-2, m_pixmapArea, g_gc, BLACK, TRUE);
+					g_isContextSetupWallPad = TRUE;
+					ChangeContext(m_nContextNum+1);
+				}
+				else
+				{
+					g_isContextSetupWallPad = FALSE;
+					ChangeContext(m_nContextNum+1);
+				}
+			}
+			else if(CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_BOTTOM)))	//설정
+			{
+				if(m_nContextNum != CONTEXT_SETUP_DOOR)
+				{
+					m_nSetupStep = CONTEXT_SETUP_STEP_PAGE;
+					ChangeContext(m_nContextNum);
+				}
+			}
+		}
+		else	//설정항목 변경모드
+		{
+			if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_TOP)) ||
+				CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_REAR_VOL_UP)) )
+			{
+				switch(m_nContextNum)
+				{
+				case CONTEXT_SETUP_LED:			// ON
+					g_gpio_mtm.SetGpioOutPin(GPIO_LED, HIGH);
+					DrawTextRect2("LED를 켰습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+					break;
+				case CONTEXT_SETUP_BACKLIGHT:	// ON
+					g_gpio_mtm.SetGpioOutPin(GPIO_LCD_BACKLIGHT, HIGH);
+					DrawTextRect2("백라이트를 켰습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+					break;
+				case CONTEXT_SETUP_RELAY:		// ON
+					g_gpio_mtm.SetGpioOutPin(GPIO_RELAY, HIGH);
+					DrawTextRect2("릴레이를 켰습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+					break;
+				case CONTEXT_SETUP_DOOR:
+					break;
+				case CONTEXT_SETUP_SOUND:		// 증가
+					if(g_setup_data.m_SetupData.volume < MAX_VOLUME_LEVEL)
+					{
+						g_setup_data.m_SetupData.volume++;
+						SetVolume(g_setup_data.m_SetupData.volume);
+
+						sprintf(szText, "Volume Level: %d\0", g_setup_data.m_SetupData.volume);
+						SetRect(&rcText, m_rcArea.x, m_rcArea.y+m_rcArea.h/2-16, m_rcArea.w, 32);
+						DrawTextRect2(szText, g_wid, g_gc, &rcText, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+						PlayWavFile("/app/sound/touch.wav");
+					}
+					break;
+				case CONTEXT_SETUP_MICROWAVE:	// 증가
+					if(g_setup_data.m_SetupData.adc_value < MAX_ADC_VALUE)
+					{
+						g_setup_data.m_SetupData.adc_value++;
+					}
+					break;
+				case CONTEXT_SETUP_WALLPAD:		// 명령요청
+					switch(m_nWallPadKeyPage)
+					{
+					case CONTEXT_SETUP_WALLPAD_PAGE_LIGHT_OFF:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestLightSet(TRUE);		//소등
+						}
+					//	RequestReserve(SNS_CMD_LAMP_ONOFF_REQ, 1);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_GAS_CUT:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestGasCut();
+						}
+					//	RequestReserve(SNS_CMD_GAS_OFF_REQ, 1);		//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_ON:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestSecuritySet(TRUE);
+						}
+					//	RequestReserve(SNS_CMD_OUT_ONOFF_REQ, 1);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_SECURITY_OFF:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestSecuritySet(FALSE);
+						}
+					//	RequestReserve(SNS_CMD_OUT_ONOFF_REQ, 0);	//0=OFF, 1=ON
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_WEATHER_INFO:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestWeatherInfo();
+						}
+					//	RequestReserve(SNS_CMD_WEATHER_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_PARKING_INFO:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestParingInfo();
+						}
+					//	RequestReserve(SNS_CMD_PARKING_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_ELV_INFO:
+					//	RequestReserve(SNS_CMD_ELEVATOR_STAT_REQ);
+						break;
+					case CONTEXT_SETUP_WALLPAD_PAGE_ELV_CALL:
+						if(g_pWallPad)
+						{
+							g_pWallPad->RequestElevatorCall();
+						}
+					//	RequestReserve(SNS_CMD_ELEVATOR_CALL);
+						break;
+					}
+					break;
+				}
+			}
+			else if( CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_MIDDLE)) ||
+				     CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_REAR_VOL_DOWN)) )
+			{
+				switch(m_nContextNum)
+				{
+				case CONTEXT_SETUP_LED:			// OFF
+					g_gpio_mtm.SetGpioOutPin(GPIO_LED, LOW);
+					DrawTextRect2("LED를 껏습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+					break;
+				case CONTEXT_SETUP_BACKLIGHT:	// OFF
+					g_gpio_mtm.SetGpioOutPin(GPIO_LCD_BACKLIGHT, LOW);
+					DrawTextRect2("백라이트를 껏습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+					break;
+				case CONTEXT_SETUP_RELAY:		// OFF
+					g_gpio_mtm.SetGpioOutPin(GPIO_RELAY, LOW);
+					DrawTextRect2("릴레이를 껏습니다", g_wid, g_gc, &m_rcArea, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+					break;
+				case CONTEXT_SETUP_DOOR:
+					break;
+				case CONTEXT_SETUP_SOUND:		// 감소
+					if(g_setup_data.m_SetupData.volume > 0)
+					{
+						g_setup_data.m_SetupData.volume--;
+						SetVolume(g_setup_data.m_SetupData.volume);
+
+						sprintf(szText, "Volume Level: %d\0", g_setup_data.m_SetupData.volume);
+						SetRect(&rcText, m_rcArea.x, m_rcArea.y+m_rcArea.h/2-16, m_rcArea.w, 32);
+						DrawTextRect2(szText, g_wid, g_gc, &rcText, g_font, 24, WHITE, BLACK, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
+
+						PlayWavFile("/app/sound/touch.wav");
+					}
+					break;
+				case CONTEXT_SETUP_MICROWAVE:	// 감소
+					if(g_setup_data.m_SetupData.adc_value > 0)
+					{
+						g_setup_data.m_SetupData.adc_value--;
+					}
+					break;
+				case CONTEXT_SETUP_WALLPAD:		// 명령전환
+					m_nWallPadKeyPage++;
+					if(m_nWallPadKeyPage == CONTEXT_SETUP_WALLPAD_PAGE_COUNT)
+					{
+						m_nWallPadKeyPage = CONTEXT_SETUP_WALLPAD_PAGE_LIGHT_OFF;
+					}
+					ChangeContext(m_nContextNum);
+					break;
+				}
+			}
+			else if(CHK_FLAG(usGpioFlag, BIT_FLAG(GPIO_FRONT_RIGHT_BOTTOM)))
+			{
+				if(m_nContextNum != CONTEXT_SETUP_DOOR)
+				{
+					m_nSetupStep = CONTEXT_SETUP_STEP_SELECT;
+					ChangeContext(m_nContextNum);
+				}
+			}
+
+			if(m_nContextNum==CONTEXT_SETUP_MICROWAVE)	//MicroWave
+			{
+				if(m_isAdcValueLongKeyPlus) 
+				{
+					m_isAdcValueLongKeyPlus=FALSE;
+				}
+				if(m_isAdcValueLongKeyMinus) 
+				{
+					m_isAdcValueLongKeyMinus=FALSE;
+				}
+			}
+		}
+	}
+
+//	printf("-CContextSetup::ButtonUp\r\n");
+}
+
+//
+// CContextSetup Only Member
+//
+
+void CContextSetup::RecvProc_HDT(UCHAR *pPacket)
+{
+}
+
+void CContextSetup::RecvProc_SHN(UCHAR *pPacket)
+{
+}
+
+void CContextSetup::RecvProc_KCM(UCHAR *pPacket)
+{
+#if 0
+	PKCM_PACKET pKcmPacket = (PKCM_PACKET)pPacket;
+	KCM_PACKET ResPacket = {0,};
+	UINT color;
+
+	switch(pKcmPacket->adh)
+	{
+	case KCM_DEV_MTM:
+	case KCM_DEV_USS:
+		color = LTCYAN;
+		break;
+	default:
+		color = LTGREEN;
+		break;
+	}
+
+	PrintPacket(pPacket, sizeof(KCM_PACKET), color);
+
+	//ACK확인명령
+	if( CHK_FLAG(pKcmPacket->cc, KCM_CC_ACK_IS) )
+	{
+		//목적지/출발지 바꿔고 FCC 다시계산해서 응답
+		memcpy(&ResPacket, pPacket, sizeof(KCM_PACKET));
+		ResPacket.adh = pKcmPacket->ash;
+		ResPacket.adl = pKcmPacket->asl;
+		ResPacket.ash = pKcmPacket->adh;
+		ResPacket.asl = pKcmPacket->adl;
+		ResPacket.fcc = CalcCheckSum((UCHAR *)&ResPacket.hd, 16);
+		PrintPacket((UCHAR*)&ResPacket, sizeof(KCM_PACKET), CYAN);
+	}
+#endif
+}
+
+#if 0
+void CContextSetup::RequestReserve(UCHAR cmd, UCHAR data)
+{
+	m_isRequestReserve = TRUE;
+	m_cmdRequestReserve = cmd;
+	m_dataRequestReserve = data;
+}
+
+void CContextSetup::RequestDirect(UCHAR cmd, UCHAR data)
+{
+	g_wallpad_sns.SendRequest(cmd, data);
+	PrintSendPacket(cmd, data);
+}
+
+// SNS패킷중 제일 긴것은 날씨응답으로 22bytes
+// 패킷덤프는 "T(R)x: xx xx ..." 형태이므로 최대패킷 덤프 스트링 사이즈는 70bytes
+// 70바이트는 18폰트 기준으로 화면에서 630pixel이 필요함
+#endif
+
+// 표시영역의 화면폭은 518 pixel이고 18폰트 크기기준으로 57바이트 스트링까지 표시가능
+
+#define MAX_PRINTABLE_STRING	55
+
+void CContextSetup::PrintPacket(UCHAR* pPacket, int size, UINT color, BOOL isRx)
+{
+	char szText[128] = {0,};
+	int i, idx=0, wScroll, hScroll, sizeFont=18, heighLine=22;
+	UCHAR *p = pPacket;
+
+	if(pPacket==NULL) return;
+
+	if(isRx)
+		idx = sprintf(szText, "Rx: ");
+	else
+		idx = sprintf(szText, "Tx: ");
+
+	for(i=0; i<size; i++)
+	{
+		idx += sprintf(&szText[idx], "%02x ", *p++);
+	}
+
+	wScroll = m_rcArea.w-2;
+	hScroll = m_rcArea.h-2;
+
+	size = strlen(szText);
+	if(size <= MAX_PRINTABLE_STRING)
+	{
+		//위로 한라인 스크롤
+		GrCopyArea(m_pixmapArea, g_gc, 0, 0, wScroll, hScroll-heighLine, m_pixmapArea, 0, heighLine, MWROP_SRCCOPY);
+
+		//하단에 표시
+		DrawRect(0, hScroll-heighLine, wScroll, heighLine, m_pixmapArea, g_gc, BLACK, TRUE);
+		DrawText2(szText, m_pixmapArea, g_gc, 0, hScroll-heighLine, wScroll, heighLine, g_font, sizeFont, color, BLACK, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+	}
+	else
+	{
+		//위로 두라인 스크롤
+		GrCopyArea(m_pixmapArea, g_gc, 0, 0, wScroll, hScroll-(heighLine*2), m_pixmapArea, 0, heighLine*2, MWROP_SRCCOPY);
+
+		//하단에 표시
+		DrawRect(0, hScroll-(heighLine*2), wScroll, (heighLine*2), m_pixmapArea, g_gc, BLACK, TRUE);
+		szText[MAX_PRINTABLE_STRING-1] = 0;	//space로 채워진 부분
+		DrawText2(szText, m_pixmapArea, g_gc, 0, hScroll-(heighLine*2), wScroll, heighLine, g_font, sizeFont, color, BLACK, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		DrawText2("    ", m_pixmapArea, g_gc, 0, hScroll-heighLine, sizeFont/2*4, heighLine, g_font, sizeFont, color, BLACK, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+		DrawText2(&szText[MAX_PRINTABLE_STRING], m_pixmapArea, g_gc, sizeFont/2*4, hScroll-heighLine, wScroll-(sizeFont/2*4), heighLine, g_font, sizeFont, color, BLACK, TXT_HALIGN_LEFT|TXT_VALIGN_TOP);
+	}
+
+	//그래프 옮기기
+	GrCopyArea(g_wid, g_gc, m_rcArea.x+1, m_rcArea.y+1, m_rcArea.w-2, m_rcArea.h-2, m_pixmapArea, 0, 0, MWROP_SRCCOPY);
+}
+
+#if 0
+void CContextSetup::PrintSendPacket(UCHAR cmd, UCHAR data)
+{
+	UCHAR pkt[5];
+	int ret = ERROR;
+
+	pkt[0] = SNS_HDR_DEV;
+	pkt[1] = cmd;
+	pkt[2] = 1;
+	pkt[3] = data;
+	pkt[4] = g_wallpad_sns.CalcCheckSum(pkt, 4);
+
+	PrintPacket(pkt, FALSE);
+}
+#endif
+
+

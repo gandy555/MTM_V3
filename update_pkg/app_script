@@ -1,0 +1,140 @@
+#!/bin/sh
+
+### eth0 set
+ifconfig eth0 up
+ifconfig eth0 192.168.10.101
+route add default gw 192.168.10.1
+#ifconfig eth0 down
+
+### dhcp  start
+#/usr/sbin/dhcpcd eth0
+
+### volume control
+insmod /app/avol.ko
+#echo 0000 > /proc/driver/wm9713/04-AC97_HEADPHONE_VOL
+
+### wifi start 
+#/app/wifi_init.sh
+
+### sleep
+#sleep 5
+
+## minz php start
+#/app/sbin/arm-linux-lighttpd -D -f /app/conf/lighttpd.conf &
+
+## sleep
+#sleep 1
+
+## device init
+insmod /app/dev_gpio.ko
+
+## microwave init
+insmod /app/gadc.ko
+mknod /dev/adc c 10 131
+
+## usb mount
+if [ -d /sys/block/sda ]; then
+
+	mount -t vfat /dev/sda1 /mnt/usb
+	
+	echo "######## execute update1 binry ########"
+	/app/update1 &
+	
+	if [ ! -f /app/update.done ]; then
+	if [ -f /mnt/usb/update.tar.gz ]; then
+
+		echo "######## untar update #########"
+		cd /app/
+		tar zxvf /mnt/usb/update.tar.gz
+
+#		echo "######## delete update ########"
+#		rm -f /mnt/usb/update.tar.gz
+
+		echo "done" > /app/update.done
+
+		sleep 1
+	fi
+	fi
+
+	if [ ! -f /app/font.done ]; then
+	if [ -f /mnt/usb/font.tar.gz ]; then
+
+		echo "######## untar font ########"
+		cd /app
+		tar zxvf /mnt/usb/font.tar.gz
+
+#		echo "######## delete font ########"
+#		rm -f /mnt/usb/font.tar.gz
+
+		echo "done" > /app/font.done
+
+		sleep 1
+	fi
+	fi
+
+	if [ ! -f /app/image.done ]; then
+   	if [ -f /mnt/usb/image.tar.gz ]; then
+
+		echo "######## untar image ########"
+		cd /app
+		tar zxvf /mnt/usb/image.tar.gz
+
+#		echo "######## delete image ########"
+#		rm -f /mnt/usb/image.tar.gz
+
+		echo "done" > /app/image.done
+
+		sleep 1
+	fi
+	fi
+
+	if [ ! -f /app/sound.done ]; then
+	if [ -f /mnt/usb/sound.tar.gz ]; then
+
+		echo "######## untar sound ########"
+		cd /app
+		tar zxvf /mnt/usb/sound.tar.gz
+
+#		echo "######## delete sound ########"
+#		rm -f /mnt/usb/sound.tar.gz
+
+		echo "done" > /app/sound.done
+
+		sleep 1
+	fi
+	fi
+
+	if [ -f /mnt/usb/adc_value.conf ]; then
+		echo "######## adc value copy ########"
+		cd /app
+		rm -f ./config/adc_value.conf
+		cp /mnt/usb/adc_value.conf ./config/
+	fi
+
+	echo "######## execute update2 binary ########"
+	/app/update2 &
+	
+else
+
+	if [ -f /app/update.done ]; then
+		rm -f /app/update.done
+	fi
+
+	if [ -f /app/font.done ]; then
+		rm -f /app/font.done
+	fi
+
+	if [ -f /app/image.done ]; then
+		rm -f /app/image.done
+	fi
+
+	if [ -f /app/sound.done ]; then
+		rm -f /app/sound.done
+	fi
+
+	echo "######## duotech c progream start ########"
+#	/app/ucostech &
+	/app/mts_main &
+
+fi
+

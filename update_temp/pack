@@ -1,0 +1,2 @@
+rm -f *.tar.gz
+tar zcvf update.tar.gz *

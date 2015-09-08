@@ -1,0 +1,3 @@
+killall -9 prugio
+killall -9 daewoo
+killall -9 mplayer

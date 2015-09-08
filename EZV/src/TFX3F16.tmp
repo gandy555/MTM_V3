@@ -1,0 +1,967 @@
+/******************************************************************************
+ * Filename:
+ *   Wallpad_ezville.cpp
+ *
+ * Description:
+ *   Wallpad of ezville with communication interface module
+ *
+ * Author:
+ *   gandy
+ *
+ * Version : V0.1_15-05-11
+ * ---------------------------------------------------------------------------
+ * Abbreviation
+ ******************************************************************************/
+#include "common.h"
+#include "context_setup.h"
+#include "main.h"
+/******************************************************************************
+ *
+ * Variable Declaration
+ *
+ ******************************************************************************/
+#define EZV_MAX_PKT_SIZE	512
+
+#define EZV_HEADER			0x7F
+#define EZV_DEV_ID			0x53
+#define EZV_SUB_ID			0x01
+
+// header | device ID | sub-ID |     cmd type       | data_len | data |xor | add 
+#define HEADER_IDX		0
+#define DEV_ID_IDX		1
+#define SUB_ID_IDX		2
+#define CMD_TYPE_IDX	3
+#define DATA_LEN_IDX	4
+#define DATA_0_IDX		5
+#define DATA_1_IDX		6
+#define DATA_2_IDX		7
+#define DATA_3_IDX		8
+
+#define CMD_STATUS_REQ		0x01
+#define CMD_WP_CTRL_REQ	0x41
+#define CMD_MM_CTRL_REQ	0x43
+
+#define CMD_STATUS_RSP		0x81
+#define CMD_WP_CTRL_RSP	0xC1
+#define CMD_MM_CTRL_RSP	0xC3
+
+enum wallpad_control_packet {
+	WCP_SWITCH = 1,
+	WCP_GAS,
+	WCP_SECURITY,
+	WCP_ELEVATOR,
+	WCP_DOOR,
+	WCP_WEATHER,
+	WCP_PARKING,
+};
+
+enum magicmirror_control_packet {
+	MCP_SWITCH = 1,
+	MCP_GAS,
+	MCP_SECURITY,
+	MCP_ELEVATOR,
+};
+
+struct ezv_pkt_info {
+	int idx;
+	u8 buffer[EZV_MAX_PKT_SIZE];
+};
+
+static struct ezv_pkt_info g_rcv_pkt;
+static struct ezv_pkt_info g_send_pkt;
+static u8 g_request_list[5] = {0,};
+#define READ_BYTE(p)		\
+{							\
+	if (m_serial.Read(p, 1) < 0)	\
+		return 0;			\
+}
+
+/******************************************************************************
+ *
+ * Public Functions Declaration
+ *
+ ******************************************************************************/
+CWallPadEzville::CWallPadEzville()
+{
+	m_GasControlReserve = 0;
+	m_LightControlReserve = 0;
+	m_SecurityControlReserve = 0;
+	m_ElevatorControlReserve = 0;
+
+	m_isElevatorCall = FALSE;
+	m_isElevatorArrive = FALSE;
+}
+
+CWallPadEzville::~CWallPadEzville()
+{
+}
+
+BOOL CWallPadEzville::Run()
+{
+	BOOL fRet = FALSE;
+	struct termios tio;
+
+	// 9600bps, 8bit, 1stopbit, non-parity
+	if ((fRet = m_serial.Open(UART1_DEV, B9600)) == FALSE) {
+		DBGMSG(DBG_WALLPAD, "[WallPad:EZV] Open Failure\r\n");
+		return FALSE;
+	}
+
+	//for RS-485
+	ioctl( m_serial.m_fdDev, 0x54F0, 0x0001 );
+    	tcflush  ( m_serial.m_fdDev, TCIFLUSH );
+
+	//Listener Start
+	if ((fRet = m_serial.StartListener(SerialListener_EZV, this)) == FALSE) {
+		DBGMSG(DBG_WALLPAD, "[WallPad:EZV] StartListener Failure\r\n");
+	}
+
+	return fRet;
+}
+
+void CWallPadEzville::Stop()
+{
+	m_serial.StopListener();
+
+	m_serial.Close();
+}
+
+void CWallPadEzville::RequestWeatherInfo()
+{
+}
+
+//가스차단요청
+void CWallPadEzville::RequestGasCut()
+{
+	m_GasControlReserve = HDT_CMD_GAS_VALVE_CLOSE;
+}
+
+//가스상태요청
+void CWallPadEzville::RequestGasStatus()
+{
+}
+
+//일괄소등요청(isAllOff: TRUE=소등, FALSE=소등해제)
+void CWallPadEzville::RequestLightSet(BOOL isAllOff)
+{
+	m_LightControlReserve = (isAllOff) ? HDT_CMD_LIGHT_OUT_ON : HDT_CMD_LIGHT_OUT_OFF;
+}
+
+//방범설정요청(isSecurityOn: TRUE=방범설정, FALSE=방범해제)
+void CWallPadEzville::RequestSecuritySet(BOOL isSecurityOn)
+{
+	//USS폴링 시점에 응답으로 제어함. 따라서 제어에 Delay가 있게됨.
+	m_SecurityControlReserve = (isSecurityOn) ? HDT_CMD_SECURITY_ON : HDT_CMD_SECURITY_OFF;
+//	g_setup_data.m_SetupData.security_stat = (isSecurityOn) ? 1 : 0;
+}
+
+//엘레베이터 호출
+void CWallPadEzville::RequestElevatorCall()
+{
+	m_ElevatorControlReserve = HDT_CMD_ELV_DOWN;
+}
+
+//엘레베이터 상태요청
+void CWallPadEzville::RequestElevatorStatus()
+{
+	//별도요청없음.
+	//엘리베이터 스위치폴링에 포함된 상태를 표시함
+}
+
+//주차위치정보요청
+void CWallPadEzville::RequestParkingInfo()
+{
+	//별도요청없음
+	//입/출차시 Event Sender가 보내는 데이타를 수신해서 표시
+}
+
+//
+// Member Function
+//
+int CWallPadEzville::Write(UCHAR *pData, int size)
+{
+	CContextSetup* pContextSetup = NULL;
+	int ret = ERROR;
+	ULONG ulTick, delay;
+
+	if (m_serial.IsOpen()) {
+		DBGMSG(DBG_WALLPAD, "[WallPad:EZV] Write\r\n");
+		DBGDMP(DBG_WALLPAD, pData, size, TRUE);
+
+		//수신중일경우 대기
+		ulTick = GetTickCount();
+		while (m_isRecv) { 
+			usleep(1000); 
+			if (GetElapsedTick(ulTick) >= 300) {
+				DBGMSG(DBG_WALLPAD, "[WallPad:EZV] Wait for read done: Timeout!!\r\n");
+				return -1;
+			}
+		}
+
+		// 485 Enable
+		g_gpio_mtm.SetGpioOutPin(GPIO_RS485_CTRL, LOW);
+
+		// TX Enable후 최초 패킷을 전송하기까지 1.5ms 지연
+		usleep(10);
+
+		ret = m_serial.Write(pData, size);
+		if (ret != size) {
+			DBGMSG(DBG_WALLPAD, "[WallPad:EZV] Write Bytes Error, write=%d, expect=%d\e\n", ret, size);
+		}
+
+		//마지막 패킷 전송후 TX Disable 하기까지 지연 (패킷사이즈 전송시간 + 1.5[ms])
+		delay = (size * 1042) + 10;	// 9600[bps]에서 1start+8bit+1stop 전송속도는 1.04167[ms] 이므로 21 byte는 21.875[ms]
+		usleep(delay);
+
+		// 485 Disable
+		g_gpio_mtm.SetGpioOutPin(GPIO_RS485_CTRL, HIGH);
+
+	#if 1
+		if (g_isContextSetupWallPad) {
+			pContextSetup = (CContextSetup*)g_state.GetCurrContext();
+			if (pContextSetup) {
+				pContextSetup->PrintPacket(pData, size, CYAN, FALSE);
+			}
+		}
+	#endif
+	}
+
+	return ret;
+}
+
+UCHAR CWallPadEzville::calc_xor_sum(UCHAR *_pkt, UINT _size)
+{
+	UCHAR sum = 0;
+	UINT i;
+	
+	for (i = 0; i < _size-2; i++) {
+		sum ^= _pkt[i];
+	}
+
+	return sum;
+}
+
+UCHAR CWallPadEzville::calc_add_sum(UCHAR *_pkt, UINT _size)
+{
+	UCHAR sum = 0;
+	UINT i;
+	
+	for (i = 0; i < _size-1; i++) {
+		sum += _pkt[i];
+	}
+
+	return sum;
+}
+
+//
+// Thread(SerialListener) Context
+//
+void* CWallPadEzville::SerialListener_EZV(void *pParam)
+{
+	CWallPadEzville *pThis = (CWallPadEzville *)pParam;
+	CSerial *pSerial = &pThis->m_serial;
+	struct timeval timeout;
+	fd_set fdRead;
+	int ret;
+
+	DBGMSG(DBG_WALLPAD, "%s: Start\r\n", __func__);
+
+	while (pSerial->m_fListenerRunning) {
+		FD_ZERO(&fdRead);
+		FD_SET(pSerial->m_fdDev, &fdRead);
+
+		timeout.tv_sec  = SELECT_TIMEOUT_SEC;
+		timeout.tv_usec = SELECT_TIMEOUT_USEC;
+		ret = select(pSerial->m_fdDev+1, &fdRead, NULL, NULL, &timeout);
+		if (FD_ISSET(pSerial->m_fdDev, &fdRead)) {
+			pThis->ezv_parser();
+		}
+	}
+
+	DBGMSG(DBG_WALLPAD, "%s: End\r\n", __func__);
+
+	pthread_exit(NULL); 
+}
+
+u8 CWallPadEzville::pkt_delimeter(struct ezv_pkt_info *_pkt)
+{
+	int ret, t_size;
+
+	switch (_pkt->idx) {
+	case HEADER_IDX:
+		while (1) {
+			READ_BYTE(&_pkt->buffer[0]);
+			if (_pkt->buffer[0] == EZV_HEADER) {
+				_pkt->idx++;
+				break;
+			}
+		}
+	case DEV_ID_IDX:
+		READ_BYTE(&_pkt->buffer[_pkt->idx]);
+		if (_pkt->buffer[_pkt->idx] != EZV_DEV_ID) {
+			_pkt->idx = 0;
+			DBGMSG(DBG_WALLPAD, "Invalid Device ID");
+			return 0;
+		}
+		_pkt->idx++;
+	case SUB_ID_IDX:
+		READ_BYTE(&_pkt->buffer[_pkt->idx]);
+		if (_pkt->buffer[_pkt->idx] != EZV_SUB_ID) {
+			_pkt->idx = 0;
+			DBGMSG(DBG_WALLPAD, "Invalid Sub ID");
+			return 0;
+		}
+		_pkt->idx++;
+	case CMD_TYPE_IDX:	
+		READ_BYTE(&_pkt->buffer[_pkt->idx]);
+		_pkt->idx++;
+	case DATA_LEN_IDX: 
+		READ_BYTE(&_pkt->buffer[_pkt->idx]);
+		_pkt->idx++;
+	default:	/* data */
+		t_size = _pkt->buffer[4] + 7;
+		if (_pkt->idx == t_size) 
+			return 1;
+		ret = m_serial.Read(&_pkt->buffer[_pkt->idx], t_size-_pkt->idx);
+		if (ret > 0)
+			_pkt->idx = _pkt->idx + ret;		
+		if (_pkt->idx == t_size) 
+			return 1;
+		break;
+	}
+	
+	return 0;
+}
+
+u8 CWallPadEzville::pkt_verify(struct ezv_pkt_info *_pkt)
+{
+	u8 xor, add;
+	
+	xor = calc_xor_sum(_pkt->buffer, _pkt->idx);
+	if (xor != _pkt->buffer[_pkt->idx-2]) {
+		DBGMSG(DBG_WALLPAD, "<%s> Invalid xor sum(%d / %d)\r\n",
+			__func__, xor, _pkt->buffer[_pkt->idx-2]);
+		return 0;
+	}
+
+	add = calc_add_sum(_pkt->buffer, _pkt->idx);
+	if (add != _pkt->buffer[_pkt->idx-2]) {
+		DBGMSG(DBG_WALLPAD, "<%s> Invalid add sum(%d / %d)\r\n",
+			__func__, add, _pkt->buffer[_pkt->idx-1]);
+		return 0;
+	}
+	
+	return 1;
+}
+
+int CWallPadEzville::build_pkt(u8 _cmd, u8 *_data, int _size)
+{
+	struct ezv_pkt_info *pkt = &g_send_pkt;
+	
+	memset(pkt, 0, sizeof(struct ezv_pkt_info));
+
+	pkt->idx = _size + 7;
+	pkt->buffer[HEADER_IDX] = EZV_HEADER;
+	pkt->buffer[DEV_ID_IDX] = EZV_DEV_ID;
+	pkt->buffer[SUB_ID_IDX] = EZV_SUB_ID;
+	pkt->buffer[CMD_TYPE_IDX] = _cmd;
+	pkt->buffer[DATA_LEN_IDX] = _size;
+	if (_size > 0)
+		memcpy(&pkt->buffer[DATA_0_IDX], _data, _size);
+	pkt[pkt->idx-2] = calc_xor_sum(pkt, pkt->idx);
+	pkt[pkt->idx-1] = calc_add_sum(pkt, pkt->idx);
+}
+
+void CWallPadEzville::set_request_list(u8 _req_id, u8 _ctrl, u8 _onoff)
+{
+	u8 *list = g_request_list;
+
+	if (_req_id >= MAX_RQL) {
+		DBGMSG(DBG_WALLPAD, "<%s> Invalid request ID(%d)\r\n");
+		return;
+	}
+
+	memset(list, 0, 5);
+	
+	list[1] = ((list[1]) | (1 <<  _req_id));
+
+	list[2] = (1 <<  _ctrl);
+
+	if (_ctrl == RQL_CONTROL)
+		list[3] = (1 <<  _onoff);
+	else
+		list[3] = 0;
+}
+
+u8 CWallPadEzville::status_pkt(u8 *_pkt)
+{
+	struct ezv_pkt_info *pkt = &g_send_pkt;
+	
+	usleep(10000);	//10ms 이후 응답전송
+
+	build_pkt(CMD_STATUS_RSP, g_request_list, 5);
+	if (Write(pkt->buffer, pkt->idx) <= 0) {
+		DBGMSG(DBG_WALLPAD, "<%s> Response Write Failure\r\n");
+	}
+}
+
+u8 CWallPadEzville::wp_control_pkt(u8 *_pkt)
+{
+	struct ezv_pkt_info *pkt = &g_send_pkt;
+	u8 light_stat = g_setup_data.m_SetupData.light_stat;
+	
+	switch (_pkt[DATA_0_IDX]) {
+	case WCP_SWITCH:
+		if (_pkt[DATA_1_IDX] != g_setup_data.m_SetupData.light_stat) {
+			g_setup_data.m_SetupData.light_stat = light_stat;
+			pMtmHdr->type = MTM_DATA_TYPE_LIGHT;
+			pMtmHdr->len  = sizeof(MTM_DATA_LIGHT);
+			if(g_setup_data.m_SetupData.light_stat)
+				pMtmDataLight->status = MTM_DATA_LIGHT_OFF;
+			else
+				pMtmDataLight->status = MTM_DATA_LIGHT_ON;
+			buffer_mtm[sizeof(MTM_HEADER)+sizeof(MTM_DATA_LIGHT)] = MTM_PACKET_ETX;
+			g_message.SendMessageData(MSG_WALLPAD_DATA, buffer_mtm, pMtmHdr->len+5);
+		}
+		break;
+	case WCP_GAS:
+		break;
+	case WCP_SECURITY:
+		break;
+	case WCP_ELEVATOR:
+		break;
+	case WCP_DOOR:
+		break;
+	case WCP_WEATHER:
+		break;
+	case WCP_PARKING:
+		break;
+	}
+
+	usleep(10000);	//10ms 이후 응답전송
+
+	build_pkt(CMD_WP_CTRL_RSP, g_request_list, 5);
+	if (Write(pkt->buffer, pkt->idx) <= 0) {
+		DBGMSG(DBG_WALLPAD, "<%s> Response Write Failure\r\n");
+	}
+}
+
+u8 CWallPadEzville::mm_control_pkt(u8 *_pkt)
+{
+	switch (_pkt[DATA_0_IDX]) {
+	case MCP_SWITCH:
+		break;
+	case MCP_GAS:
+		break;
+	case MCP_SECURITY:
+		break;
+	case MCP_ELEVATOR:
+		break;
+	}
+}
+
+//------------------------------------------------------------------------------
+//  0xF7       0x53           0x01      0x01,0x41,0x43         xx         xx    xx    xx
+//------------------------------------------------------------------------------
+// header | device ID | sub-ID |     cmd type       | data_len | data |xor | add 
+//------------------------------------------------------------------------------
+void CWallPadEzville::ezv_parser()
+{
+	CContextSetup* pContextSetup = NULL;
+	struct ezv_pkt_info *pkt = &g_rcv_pkt;
+	int ret;
+
+	m_isRecv = TRUE;
+
+	if (!pkt_delimeter(pkt)) {
+		DBGMSG(DBG_WALLPAD, "<%s> Data size is not enough!\r\n", __func__);
+		return;
+	}
+
+	if (!pkt_verify(pkt))
+		return;
+
+	switch (pkt->buffer[CMD_TYPE_IDX]) {
+	case CMD_STATUS_REQ:
+		status_pkt(pkt->buffer);
+		break;
+	case CMD_WP_CTRL_REQ:
+		wp_control_pkt(pkt->buffer);
+		break;
+	case CMD_MM_CTRL_REQ:
+		mm_control_pkt(pkt->buffer);
+		break;
+	default:
+		DBGMSG(DBG_WALLPAD, "<%s> Invalid CMD TYPE: d\r\n", 
+			__func__, pkt->buffer[CMD_TYPE_IDX]);
+		break;
+	}
+	
+	if (g_isContextSetupWallPad) {
+		pContextSetup = (CContextSetup*)g_state.GetCurrContext();
+		if (pContextSetup) {
+			switch (pHeader->type) {
+			case HDT_TYPE_QUERY:
+			case HDT_TYPE_EVENT:
+				color = LTCYAN;
+				break;
+			default:
+				color = LTGREEN;
+				break;
+			}
+			pContextSetup->PrintPacket(buffer, pHeader->len, color);
+		}
+	}
+}
+
+void CWallPadEzville::WeatherInfoProc(UCHAR *pBuffer)
+{
+	if (pBuffer == NULL)
+		return;
+
+	PHDT_PACKET_HDR pHeader = (PHDT_PACKET_HDR)pBuffer;
+//	PHDT_PACKET_TAIL pTail = NULL;
+	PHDT_PACKET_WEATHER_INFO pWeatherInfo = (PHDT_PACKET_WEATHER_INFO)&pBuffer[sizeof(HDT_PACKET_HDR)];
+
+	UCHAR buffer_mtm[MTM_PACKET_MAX] = {0,};
+	PMTM_HEADER pMtmHdr = (PMTM_HEADER)&buffer_mtm[0];
+	PMTM_DATA_WEATHER	pMtmDataWeather  = (PMTM_DATA_WEATHER)&buffer_mtm[sizeof(MTM_HEADER)];
+
+	struct tm t = {0,};
+	struct timeval tvNew = {0,};
+	int i, temperature;
+
+	pMtmHdr->type = MTM_DATA_TYPE_WEATHER;
+	pMtmHdr->len  = sizeof(MTM_DATA_WEATHER);
+
+	//현재시간(arg1~arg6)
+	pMtmDataWeather->year	= pWeatherInfo->year;
+	pMtmDataWeather->month	= pWeatherInfo->month;
+	pMtmDataWeather->day	= pWeatherInfo->day;
+	pMtmDataWeather->hour	= pWeatherInfo->hour;
+	pMtmDataWeather->minute	= pWeatherInfo->minute;
+	pMtmDataWeather->second	= pWeatherInfo->second;
+
+	t.tm_year = pWeatherInfo->year + 100;
+	t.tm_mon  = pWeatherInfo->month - 1;
+	t.tm_mday = pWeatherInfo->day;
+	t.tm_hour = pWeatherInfo->hour;
+	t.tm_min  = pWeatherInfo->minute;
+	t.tm_sec  = pWeatherInfo->second;
+
+	tvNew.tv_sec  = mktime(&t);
+	tvNew.tv_usec = 0;
+
+	if (settimeofday(&tvNew, NULL) == ERROR) {
+		DBGMSG(DBG_WALLPAD, "[WallPad:HDT] settimeofday: error : %d %s\r\n", errno, strerror(errno));
+	} else {
+		system("hwclock -w");
+		g_timer.Refresh();
+		DBGMSG(DBG_WALLPAD, "[WallPad:HDT] settimeofday: done\r\n");
+	}
+
+	//날씨아이콘(arg7)
+	switch (pWeatherInfo->weather) {
+	case 1:		//맑음
+	case 11:
+		pMtmDataWeather->weather2 = IMG_ENUM_WEATHER_SERENITY;	//맑음
+		break;
+	case 2:		//구름조금
+	case 16:
+		pMtmDataWeather->weather2 = IMG_ENUM_WEATHER_PARTLY_CLOUDY;	//구름조금
+		break;
+	case 3:		//흐림
+	case 9:
+		pMtmDataWeather->weather2 = IMG_ENUM_WEATHER_CLOUDY;	//흐림
+		break;
+	case 4:		//비
+	case 6:
+	case 13:
+	case 15:
+	case 18:
+	case 20:
+		pMtmDataWeather->weather2 = IMG_ENUM_WEATHER_RAINNY;	//비
+		break;
+	case 5:		//눈
+	case 8:
+	case 14:
+	case 19:
+		pMtmDataWeather->weather2 = IMG_ENUM_WEATHER_SNOW;		//눈
+		break;
+	case 7:		//소나기
+		pMtmDataWeather->weather2 = IMG_ENUM_WEATHER_SHOWER;	//소나기
+		break;
+	case 10:	//뇌우
+	case 12:
+	case 17:
+		pMtmDataWeather->weather2 = IMG_ENUM_WEATHER_THUNDERSTORM;	//뇌우
+		break;
+	}
+
+	//온도(arg8~arg10)
+	if (pWeatherInfo->temp_under >= 10)
+		pWeatherInfo->temp_under = 1;	//소숫점 1자리로 맞춤
+	if (pWeatherInfo->temp_range) {	//영하
+		pMtmDataWeather->temp2_low  = 
+			(pWeatherInfo->temp_int*(-10) - pWeatherInfo->temp_under);
+	} else {
+		pMtmDataWeather->temp2_low  = 
+			(pWeatherInfo->temp_int*(10) + pWeatherInfo->temp_under);;
+	}
+	pMtmDataWeather->temp2_high = pMtmDataWeather->temp2_low;
+	buffer_mtm[sizeof(MTM_HEADER)+sizeof(MTM_DATA_WEATHER)] = MTM_PACKET_ETX;
+
+	//	월패드가 시간마다 주는 데이타만 쉬프트 시킴
+	g_setup_data.m_SetupData.weather_left = g_setup_data.m_SetupData.weather_right;
+	g_setup_data.m_SetupData.temp_low_left = g_setup_data.m_SetupData.temp_low_right;
+	g_setup_data.m_SetupData.temp_high_left = g_setup_data.m_SetupData.temp_high_right;
+	g_setup_data.m_SetupData.weather_right = pMtmDataWeather->weather2;
+	g_setup_data.m_SetupData.temp_low_right = pMtmDataWeather->temp2_low;
+	g_setup_data.m_SetupData.temp_high_right = pMtmDataWeather->temp2_high;
+
+	if (g_state.GetState() == STATE_WEATHER) {
+		g_message.SendMessageData(MSG_WALLPAD_DATA, buffer_mtm, pMtmHdr->len+5);
+	}
+}
+
+void CWallPadEzville::ParkingInfoProc(UCHAR *pBuffer)
+{
+	if (pBuffer == NULL)
+		return;
+
+	PHDT_PACKET_HDR pHeader = (PHDT_PACKET_HDR)pBuffer;
+//	PHDT_PACKET_TAIL pTail = NULL;
+	PHDT_PACKET_PARKING_INFO pParkingInfo = (PHDT_PACKET_PARKING_INFO)&pBuffer[sizeof(HDT_PACKET_HDR)];
+
+	UCHAR buffer_mtm[MTM_PACKET_MAX] = {0,};
+	PMTM_HEADER			pMtmHdr = (PMTM_HEADER)&buffer_mtm[0];
+	PMTM_DATA_PARKING	pMtmDataParking  = (PMTM_DATA_PARKING)&buffer_mtm[sizeof(MTM_HEADER)];
+
+	char szParkingZone[MAX_PARKING_FLOOR_NAME+MAX_PARKING_ZONE_NAME+1] = {0,};
+	char szParkingZoneTemp[MAX_PARKING_FLOOR_NAME+MAX_PARKING_ZONE_NAME+1] = {0,};
+
+	char *dump_ptr;
+	
+	int i, index;
+
+	pMtmHdr->type = MTM_DATA_TYPE_PARKING;
+	pMtmHdr->len  = sizeof(MTM_DATA_PARKING);
+
+	//주차상태 : 입차만 확인
+	pMtmDataParking->status = MTM_DATA_PARKING_STATUS_IN;
+
+	//소문자->대문자 변환
+	if (pParkingInfo->floor_name >= 0x61)
+		pParkingInfo->floor_name -= 0x20;
+	if (pParkingInfo->zone_name >= 0x61)
+		pParkingInfo->zone_name  -= 0x20;
+
+	//층명칭
+	if (pParkingInfo->floor_name) 
+		sprintf(pMtmDataParking->floor, "%c%d", pParkingInfo->floor_name, pParkingInfo->floor_num);
+	else
+		sprintf(pMtmDataParking->floor, "%d", pParkingInfo->floor_num);
+
+	//구역명칭
+	if (pParkingInfo->zone_name)
+		sprintf(pMtmDataParking->zone, "%c%d", pParkingInfo->zone_name, pParkingInfo->zone_num);
+	else
+		sprintf(pMtmDataParking->zone, "%03d", pParkingInfo->zone_name, pParkingInfo->zone_num);
+
+	// gandy 2014_12_26
+	memcpy(pMtmDataParking->car_num, pParkingInfo->card_id, MAX_PARKING_CAR_NUM);
+	buffer_mtm[sizeof(MTM_HEADER)+sizeof(MTM_DATA_PARKING)] = MTM_PACKET_ETX;
+	if (pMtmDataParking->status == MTM_DATA_PARKING_STATUS_IN) {
+		g_setup_data.m_SetupData.status = pMtmDataParking->status;
+		memcpy(g_setup_data.m_SetupData.car_floor, pMtmDataParking->floor,   MAX_PARKING_FLOOR_NAME);
+		memcpy(g_setup_data.m_SetupData.car_zone,  pMtmDataParking->zone,    MAX_PARKING_ZONE_NAME);
+	//	memcpy(g_setup_data.m_SetupData.car_num,   pMtmDataParking->car_num, MAX_PARKING_CAR_NUM);
+		memset(g_setup_data.m_SetupData.car_num, 0, MAX_PARKING_CAR_NUM);		//HDT는 차량번호 없음
+
+		//기존의 주차이력에 존재하는 차량인지 확인
+		//	--> 있으면 해당 차량까지만 갱신
+		//	--> 없으면 이력 전체 갱신
+		
+		// find same id
+		for (index = 0; index < MAX_PARKING_HISTORY; index++) {
+			if (memcmp(&pMtmDataParking->car_num, &g_ParkingHistory[index].car_num, MAX_PARKING_CAR_NUM) == 0) 	// aleady exist
+				break;
+		}
+
+		if (index == MAX_PARKING_HISTORY)	{	// not found
+			// 2 ==> 3, 1 ==> 2, 0 ==> 1
+			for (i = MAX_PARKING_HISTORY-2; i >= 0; i--) {
+				memcpy(&g_ParkingHistory[i+1], &g_ParkingHistory[i], sizeof(MTM_DATA_PARKING));
+			}
+		} else {
+			// 2 ==> 3, 1 ==> 2, 0 ==> 1
+			for (i = index-1; i >= 0; i--) {
+				memcpy(&g_ParkingHistory[i+1], &g_ParkingHistory[i], sizeof(MTM_DATA_PARKING));
+			}
+		}
+
+		memcpy(&g_ParkingHistory[0], pMtmDataParking, sizeof(MTM_DATA_PARKING));
+
+		// dump history
+		DBGMSG(DBG_WALLPAD, "***** Parking history dump ******\r\n");
+
+		for (i = 0; i < MAX_PARKING_HISTORY; i++) {
+			dump_ptr = g_ParkingHistory[i].car_num;
+			DBGMSG(DBG_WALLPAD, "* %d. \r\n", i);
+			DBGMSG(DBG_WALLPAD, "* card_id: 0x%02X%02X%02X%02X *\r\n", dump_ptr[0], dump_ptr[1], dump_ptr[2], dump_ptr[3]);
+			dump_ptr = g_ParkingHistory[i].zone;
+			DBGMSG(DBG_WALLPAD, "* zone: %s *\r\n", dump_ptr);
+			dump_ptr = g_ParkingHistory[i].floor;
+			DBGMSG(DBG_WALLPAD, "* floor: %s *\r\n", dump_ptr);
+		}
+	}
+
+	if ((g_state.GetState() == STATE_WEATHER) || (g_state.GetState() == STATE_PARKING)) {
+		g_message.SendMessageData(MSG_WALLPAD_DATA, buffer_mtm, pMtmHdr->len+5);
+	}
+}
+
+// 월패드의 USS폴링 요청에 대한 응답전송루틴
+void CWallPadEzville::UssPollingProc(UCHAR *pBuffer)
+{
+	if (pBuffer==NULL) 
+		return;
+
+	PHDT_PACKET_HDR pHeader = (PHDT_PACKET_HDR)pBuffer;
+	PHDT_PACKET_USS_ARG pUssArgRecv;
+
+	UCHAR buffer_res[HDT_MAX_PACKET+1] = {0,};
+	PHDT_PACKET_HDR pHeaderRes = (PHDT_PACKET_HDR)&buffer_res[0];
+	PHDT_PACKET_TAIL pTailRes = NULL;
+	PHDT_PACKET_USS_ARG pUssArgRes;
+
+	UCHAR buffer_mtm[MTM_PACKET_MAX] = {0,};
+	PMTM_HEADER			pMtmHdr = (PMTM_HEADER)&buffer_mtm[0];
+	PMTM_DATA_GAS		pMtmDataGas		 = (PMTM_DATA_GAS)&buffer_mtm[sizeof(MTM_HEADER)];
+	PMTM_DATA_LIGHT		pMtmDataLight	 = (PMTM_DATA_LIGHT)&buffer_mtm[sizeof(MTM_HEADER)];
+	PMTM_DATA_SECURITY	pMtmDataSecurity = (PMTM_DATA_SECURITY)&buffer_mtm[sizeof(MTM_HEADER)];
+
+	UCHAR i, uss_dev_count = 0;
+	UCHAR light_stat	= g_setup_data.m_SetupData.light_stat;
+	UCHAR gas_stat		= g_setup_data.m_SetupData.gas_stat;
+	UCHAR security_stat = g_setup_data.m_SetupData.security_stat;
+
+	//수신패킷을 응답패킷 버퍼로 복사
+	memcpy(buffer_res, pBuffer, pHeader->len);
+	pHeaderRes->type = HDT_TYPE_RESPONSE;
+
+	uss_dev_count = (pHeader->len - HDT_HEADER_SIZE - HDT_TAIL_SIZE) / 2;
+	for (i=0; i<uss_dev_count; i++) {
+		pUssArgRecv = (PHDT_PACKET_USS_ARG)&pBuffer[sizeof(HDT_PACKET_HDR)+sizeof(HDT_PACKET_USS_ARG)*i];
+		pUssArgRes  = (PHDT_PACKET_USS_ARG)&buffer_res[sizeof(HDT_PACKET_HDR)+sizeof(HDT_PACKET_USS_ARG)*i];
+
+		switch (pUssArgRecv->dev) {
+		case HDT_DEV_USS_SWITCH:	//0x2A, USS일괄스위치 : 일괄상태
+			//전체상태가 모두 차단상태일 경우만 차단으로 응답
+			if(g_setup_data.m_SetupData.gas_stat && g_setup_data.m_SetupData.light_stat && g_setup_data.m_SetupData.security_stat)
+				pUssArgRes->cmd = HDT_USS_ARG_VALUE_CUT_OFF;		//0x01=차단
+			else
+				pUssArgRes->cmd = HDT_USS_ARG_VALUE_CUT_RELEASE;	//0x02=차단해제
+			break;
+		case HDT_DEV_LIGHT_SWITCH:	//0x19, 일괄소등 스위치
+			if (m_LightControlReserve) {	//일괄소등제어 예약명령어가 있으면
+				pUssArgRes->cmd = m_LightControlReserve;
+				m_LightControlReserve = 0;
+			} else {
+				// gandy 2015_01_07
+				switch (pUssArgRecv->cmd) {
+				case HDT_USS_ARG_VALUE_LIGHT_OUT_ON:
+					light_stat = 1;	
+					break;
+				case HDT_USS_ARG_VALUE_LIGHT_OUT_OFF:
+					light_stat = 0;
+					break;
+				default:
+					if (light_stat)
+						pUssArgRes->cmd = HDT_USS_ARG_VALUE_LIGHT_OUT_ON;
+					else
+						pUssArgRes->cmd = HDT_USS_ARG_VALUE_LIGHT_OUT_OFF;
+					DBGMSG(DBG_WALLPAD, "[WallPad:UssPollingProc] Invalid Argument %d\r\n",
+						pUssArgRecv->cmd);
+					break;
+				}
+			}
+			break;
+		case HDT_DEV_GAS_SWITCH:	//0x1B, 가스차단 스위치
+			if (m_GasControlReserve) {		//가스제어 예약명령어가 있으면
+				pUssArgRes->cmd = m_GasControlReserve;
+				m_GasControlReserve = 0;
+			} else {
+				gas_stat = (pUssArgRecv->cmd == HDT_CMD_GAS_VALVE_CLOSE) ? 1 : 0;
+			}
+			break;
+		case HDT_DEV_SECURITY:		//0x16,	보안장비 (U-보안)
+			// //0x0A=외출지연, 0x0B=입장지연 의 경우는 그대로 응답
+			if (m_SecurityControlReserve) {
+				pUssArgRes->cmd = m_SecurityControlReserve;
+				m_SecurityControlReserve = 0;
+			} else if ((pUssArgRecv->cmd == HDT_CMD_SECURITY_ON) ||
+						(pUssArgRecv->cmd == HDT_CMD_SECURITY_OFF)) {
+				if ((pUssArgRecv->cmd == HDT_CMD_SECURITY_ON) ||
+					(pUssArgRecv->cmd == HDT_CMD_SECURITY_OFF)) {
+					security_stat = (pUssArgRecv->cmd == HDT_CMD_SECURITY_ON) ? 1 : 0;
+				}
+			}
+			break;
+		case HDT_DEV_IDLE_POWER:	//0x2C, 대기전력					//0x01=ON, 0x02=OFF
+			break;
+		case HDT_DEV_OUTLET:		//0x1F, 콘센트						//0x01=ON, 0x02=OFF
+			break;
+		case HDT_DEV_BOILER:		//0x18, 난방기						//0x01=ON, 0x04=OFF(외출)
+			break;
+		case HDT_DEV_OUT_BUTTON:	//0x17, 외출버튼					//0x01=ON, 0x02=OFF
+			break;
+		}
+	}
+
+	pTailRes = (PHDT_PACKET_TAIL)&buffer_res[pHeaderRes->len - 2];
+	pTailRes->crc = CalcCheckSum(buffer_res, pHeaderRes->len - 2);
+
+	usleep(30000);	//30[ms] 이후 응답전송
+
+	if (Write(buffer_res, pHeaderRes->len) <= 0) {
+		DBGMSG(DBG_WALLPAD, "[WallPad:HDT] Response Write Failure\r\n");
+	}
+
+	switch (g_state.GetState()) {
+	case STATE_WEATHER:
+	case STATE_GAS:
+		if (gas_stat != g_setup_data.m_SetupData.gas_stat) {
+			g_setup_data.m_SetupData.gas_stat = gas_stat;
+
+			pMtmHdr->type = MTM_DATA_TYPE_GAS;
+			pMtmHdr->len  = sizeof(MTM_DATA_GAS);
+			if (g_setup_data.m_SetupData.gas_stat)
+				pMtmDataSecurity->status = MTM_DATA_GAS_CUT;
+			else
+				pMtmDataSecurity->status = MTM_DATA_GAS_OPEN;
+			buffer_mtm[sizeof(MTM_HEADER)+sizeof(MTM_DATA_GAS)] = MTM_PACKET_ETX;
+			g_message.SendMessageData(MSG_WALLPAD_DATA, buffer_mtm, pMtmHdr->len+5);
+		}
+		break;
+	case STATE_LIGHT:
+		if (light_stat != g_setup_data.m_SetupData.light_stat) {
+			g_setup_data.m_SetupData.light_stat = light_stat;
+			pMtmHdr->type = MTM_DATA_TYPE_LIGHT;
+			pMtmHdr->len  = sizeof(MTM_DATA_LIGHT);
+			if (g_setup_data.m_SetupData.light_stat)
+				pMtmDataLight->status = MTM_DATA_LIGHT_OFF;
+			else
+				pMtmDataLight->status = MTM_DATA_LIGHT_ON;
+			buffer_mtm[sizeof(MTM_HEADER)+sizeof(MTM_DATA_LIGHT)] = MTM_PACKET_ETX;
+			g_message.SendMessageData(MSG_WALLPAD_DATA, buffer_mtm, pMtmHdr->len+5);
+		}
+		break;
+	case STATE_SECURITY:
+		if (security_stat != g_setup_data.m_SetupData.security_stat) {
+			g_setup_data.m_SetupData.security_stat = security_stat;
+
+			pMtmHdr->type = MTM_DATA_TYPE_SECURITY;
+			pMtmHdr->len  = sizeof(MTM_DATA_SECURITY);
+			if(g_setup_data.m_SetupData.security_stat)
+				pMtmDataSecurity->status = MTM_DATA_SECURITY_ON;
+			else
+				pMtmDataSecurity->status = MTM_DATA_SECURITY_OFF;
+			buffer_mtm[sizeof(MTM_HEADER)+sizeof(MTM_DATA_SECURITY)] = MTM_PACKET_ETX;
+			g_message.SendMessageData(MSG_WALLPAD_DATA, buffer_mtm, pMtmHdr->len+5);
+		}
+		break;
+	case STATE_ELEVATOR:
+		break;
+	case STATE_PARKING:
+		break;
+	case STATE_SETUP:
+		break;
+	}
+
+	g_setup_data.m_SetupData.gas_stat = gas_stat;
+	g_setup_data.m_SetupData.light_stat = light_stat;
+	g_setup_data.m_SetupData.security_stat = security_stat;
+	//전체상태폴링시 제어상태가 바뀌어 올경우 해당 상태로 제어함
+	g_gpio_mtm.SetGpioOutPin(GPIO_RELAY, (light_stat==1) ? LOW : HIGH);	//LOW=소등, HIGH=소등해제
+}
+
+void CWallPadEzville::ElevatorPollingProc(UCHAR *pBuffer)
+{
+	if (pBuffer==NULL) 
+		return;
+
+	PHDT_PACKET_HDR pHeader = (PHDT_PACKET_HDR)pBuffer;
+	PHDT_PACKET_ELEVATOR_INFO pElevatorInfo = (PHDT_PACKET_ELEVATOR_INFO)&pBuffer[sizeof(HDT_PACKET_HDR)];
+
+	UCHAR buffer_res[HDT_MAX_PACKET+1] = {0,};
+	PHDT_PACKET_HDR pHeaderRes = (PHDT_PACKET_HDR)&buffer_res[0];
+	UCHAR *pArg1 = &buffer_res[sizeof(HDT_PACKET_HDR)];
+	PHDT_PACKET_TAIL pTailRes = (PHDT_PACKET_TAIL)&buffer_res[sizeof(HDT_PACKET_HDR)+1];
+
+	UCHAR buffer_mtm[MTM_PACKET_MAX] = {0,};
+	PMTM_HEADER			pMtmHdr = (PMTM_HEADER)&buffer_mtm[0];
+	PMTM_DATA_ELEVATOR	pMtmDataElevator = (PMTM_DATA_ELEVATOR)&buffer_mtm[sizeof(MTM_HEADER)];
+
+	UCHAR dir, status;
+	UCHAR ev_status, ev_floor;
+
+	//수신패킷을 응답패킷 버퍼로 복사
+	memcpy(buffer_res, pBuffer, pHeader->len);
+	pHeaderRes->type = HDT_TYPE_RESPONSE;
+	//pHeaderRes->len -= 2;
+	if (m_ElevatorControlReserve) {
+		*pArg1 = m_ElevatorControlReserve;
+		m_ElevatorControlReserve = 0;
+	} else {
+		*pArg1 = 0;
+	}
+	pTailRes = (PHDT_PACKET_TAIL)&buffer_res[pHeaderRes->len - 2];
+	pTailRes->crc = CalcCheckSum(buffer_res, pHeaderRes->len - 2);
+
+	usleep(30000);	//30[ms] 이후 응답전송
+
+	if (Write(buffer_res, pHeaderRes->len) <= 0) {
+		DBGMSG(DBG_WALLPAD, "[WallPad:HDT] Response Write Failure\r\n");
+	}
+
+	dir = (pElevatorInfo->status & 0xf0);			//방향 (0xa0=상향운행, 0xb0=하향운행)
+	status = (pElevatorInfo->status & 0x0f);			//상태 (0x00=평상시, 0x01=도착, 0x02=에러, 0x03=호출성공, 0x05=상향호출, 0x06=하향호출)
+	if (status == HDT_EV_ARG_VALUE_STATUS_ARRIVE)		//0x01, 도착
+		ev_status = MTM_DATA_EV_STATUS_ARRIVE;
+	else if(status == HDT_EV_ARG_VALUE_STATUS_ERROR)	//0x02, 에러
+		ev_status = MTM_DATA_EV_STATUS_ERROR;
+	else if(dir == HDT_EV_ARG_VALUE_STATUS_DIR_UP)		//0xA0, 상향
+		ev_status = MTM_DATA_EV_STATUS_UP;
+	else if(dir == HDT_EV_ARG_VALUE_STATUS_DIR_DOWN)	//0xB0, 하향
+		ev_status = MTM_DATA_EV_STATUS_DOWN;
+	else												//0x00, 정지
+		ev_status = MTM_DATA_EV_STATUS_STOP;
+
+	if (pElevatorInfo->floor > 0xb0)	//지하
+		ev_floor = 0xb0 - pElevatorInfo->floor;			//음수로 변환
+	else
+		ev_floor = pElevatorInfo->floor;
+
+	if ((ev_status != g_setup_data.m_SetupData.elevator_status) ||
+		(ev_floor != g_setup_data.m_SetupData.elevator_floor)) {
+		g_setup_data.m_SetupData.elevator_status = ev_status;
+		g_setup_data.m_SetupData.elevator_floor  = ev_floor;
+		if (g_state.GetState() == STATE_ELEVATOR) {
+			pMtmHdr->type = MTM_DATA_TYPE_ELEVATOR;
+			pMtmHdr->len  = sizeof(MTM_DATA_ELEVATOR);
+			pMtmDataElevator->status = g_setup_data.m_SetupData.elevator_status;
+			pMtmDataElevator->floor  = g_setup_data.m_SetupData.elevator_floor;
+			buffer_mtm[sizeof(MTM_HEADER)+sizeof(MTM_DATA_ELEVATOR)] = MTM_PACKET_ETX;
+			g_message.SendMessageData(MSG_WALLPAD_DATA, buffer_mtm, pMtmHdr->len+5);
+		}
+	}
+}
+
+#if 0
+void CWallPadEzville::ElevatorControlProc(UCHAR *pBuffer)
+{
+	//처리생략
+}
+#endif
+

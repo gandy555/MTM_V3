@@ -1,0 +1,5 @@
+rm -f *.tar.gz
+tar zcvf update.tar.gz app_script mts_main update? k *.ko bin/ config/
+tar zcvf font.tar.gz font/
+tar zcvf image.tar.gz img/
+tar zcvf sound.tar.gz sound/
