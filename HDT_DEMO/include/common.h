@@ -72,10 +72,10 @@
 
 //< 버전정보
 #define VER_MAJOR			3					//Mandatory
-#define VER_MINOR			4					//M
+#define VER_MINOR			5					//M
 #define VER_REVISION		' '					//Optional
-#define VER_DATE			"20150612\0"		//M
-#define VER_STRING			"for HDT\0"			//O
+#define VER_DATE			"20150909\0"		//M
+#define VER_STRING			"for HDT_DEMO\0"			//O
 //>
 
 #define BIT_FLAG(bit)		(1<<(bit))

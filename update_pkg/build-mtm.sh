@@ -12,6 +12,9 @@ EZV_BIN_DIR=$(pwd)/../EZV/bin
 HDT_BUILD_DIR=$(pwd)/../HDT/src
 HDT_BIN_DIR=$(pwd)/../HDT/bin
 
+HDT_DEMO_BUILD_DIR=$(pwd)/../HDT_DEMO/src
+HDT_DEMO_BIN_DIR=$(pwd)/../HDT_DEMO/bin
+
 KCM_BUILD_DIR=$(pwd)/../KOCOM/src
 KCM_BIN_DIR=$(pwd)/../KOCOM/bin
 
@@ -44,6 +47,20 @@ function build_hdt()
 	echo "==============================================="
 
 	cd ${HDT_BUILD_DIR}
+	
+	make clean
+	make all
+
+	cd ${ROOT_DIR}
+}
+
+function build_hdt_demo()
+{
+	echo "==============================================="
+	echo "  *** build HDT_DEMO applicatin ***  "
+	echo "==============================================="
+
+	cd ${HDT_DEMO_BUILD_DIR}
 	
 	make clean
 	make all
@@ -108,6 +125,8 @@ function make_pkg()
 		echo ""
 		echo "e) build EzVille "
 		echo ""
+		echo "x) build HDT DEMO "
+		echo ""
 		echo "q) quit "
 		echo ""
 		echo "==============================================="
@@ -136,6 +155,12 @@ function make_pkg()
 		e)
 		build_ezv
 		cp  ${EZV_BIN_DIR}/$BIN_NAME ${ROOT_DIR}
+		make_pkg
+		;;
+
+		x)
+		build_hdt_demo
+		cp  ${HDT_DEMO_BIN_DIR}/$BIN_NAME ${ROOT_DIR}
 		make_pkg
 		;;
 

@@ -101,7 +101,7 @@ static void simulate_parking(void)
 	parking_list_update(&parking_info);	
 
 	sprintf(parking_info.floor, "B1");
-	sprintf(parking_info.zone, "C09");
+	sprintf(parking_info.zone, "A21");
 	sprintf(parking_info.car_num, "5678"); 
 	parking_list_update(&parking_info);	
 }

@@ -49,7 +49,7 @@ void CContextParking::Init()
 	pObject = new CObjectImage(m_wid_parent, m_gc, 0, 0, g_scr_info.cols, g_scr_info.rows);
 	if(pObject)
 	{
-		pObject->LoadImage(IMG_BACKGROUND, "/app/img/blank_bg.png");
+		pObject->LoadImage(IMG_BACKGROUND, "/app/img/parking_demo_bg.png");
 
 		id = m_ObjectList.AddObject(pObject);
 	}
@@ -93,7 +93,7 @@ void CContextParking::Draw(UINT nContextNum)
 
 	//배경
 	m_ObjectList.Draw(PARKING_OBJ_BG);
-
+#if 0
 	//아이콘
 	m_ObjectList.Draw(PARKING_OBJ_ICON);
 
@@ -124,6 +124,7 @@ void CContextParking::Draw(UINT nContextNum)
 			24, WHITE, TXT_HALIGN_LEFT|TXT_VALIGN_MIDDLE);
 		line_feed++;
 	}
+#endif
 
 	DBGMSGC(DBG_PARKING, "--\r\n");
 }
