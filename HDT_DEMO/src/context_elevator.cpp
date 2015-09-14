@@ -409,7 +409,7 @@ void CContextElevator::ThreadProc()
 			DrawText(szText, m_wid_parent, m_gc,  339+13, 240+13, 143-26, 127-26, g_font, 72, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
 		#else
 			RedrawImage(m_wid_parent, m_gc, 352, 253, 117, 101, 12, 12, 117, 101, ELEVATOR_OBJ_DISPLAY);
-			DrawText(szText, m_wid_parent, m_gc,  352, 253, 117, 101, g_font, 80, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_TOP);
+			//DrawText(szText, m_wid_parent, m_gc,  352, 253, 117, 101, g_font, 80, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_TOP);
 			//DrawText(szText, m_wid_parent, m_gc,  352, 253, 117, 101, g_font, 72, WHITE, TXT_HALIGN_CENTER|TXT_VALIGN_MIDDLE);
 		#endif
 
