@@ -72,9 +72,9 @@
 
 //< 버전정보
 #define VER_MAJOR			3					//Mandatory
-#define VER_MINOR			6					//M
+#define VER_MINOR			7					//M
 #define VER_REVISION		' '					//Optional
-#define VER_DATE			"20150914\0"		//M
+#define VER_DATE			"20150923\0"		//M
 #define VER_STRING			"for HDT_DEMO\0"			//O
 //>
 

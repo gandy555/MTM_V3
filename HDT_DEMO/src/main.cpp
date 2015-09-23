@@ -19,6 +19,8 @@
 //#define BACKLIGHT_OFF_DISABLE
 #define WATCHDOG_ENABLE
 
+#define SETUP_SAVE_TIME			30	//  볼륨 변경시 30초 후에 저장 한다.
+
 //
 // Global Data
 //
@@ -727,6 +729,7 @@ void GpioEventHandler(USHORT usKeyFlag, USHORT usKeyEvent)
 						g_setup_data.m_SetupData.volume++;
 						SetVolume(g_setup_data.m_SetupData.volume);
 						PlayWavFile("/app/sound/touch.wav");
+						g_timer.SetTimer(SETUP_SAVE_TIMER, SETUP_SAVE_TIME, NULL, "Setup Save Timer");
 					}
 				}
 				else if(CHK_FLAG(usKeyFlag, BIT_FLAG(GPIO_REAR_VOL_DOWN)))
@@ -736,6 +739,7 @@ void GpioEventHandler(USHORT usKeyFlag, USHORT usKeyEvent)
 						g_setup_data.m_SetupData.volume--;
 						SetVolume(g_setup_data.m_SetupData.volume);
 						PlayWavFile("/app/sound/touch.wav");
+						g_timer.SetTimer(SETUP_SAVE_TIMER, SETUP_SAVE_TIME, NULL, "Setup Save Timer");
 					}
 				}
 				else
@@ -778,7 +782,14 @@ void TimerEventHandler(USHORT id, void* pParam)
 	
 	pContext = g_state.GetCurrContext();
 
-	if(pContext==NULL) return;
+	if (pContext == NULL) {
+		if (id == SETUP_SAVE_TIMER) {
+			DBGMSG(1, "--> SETUP_SAVE_TIMER\r\n");
+			g_timer.KillTimer(SETUP_SAVE_TIMER);
+			g_setup_data.SaveSetupData();
+		}
+		return;
+	}
 
 	switch(id)
 	{
@@ -823,6 +834,11 @@ void TimerEventHandler(USHORT id, void* pParam)
 	case RETRY_TIMEOUT:
 	//	DBGMSG(1, "--> RETRY_TIMEOUT\r\n");
 		pContext->TimerProc(id);
+		break;
+	case SETUP_SAVE_TIMER:
+		DBGMSG(1, "--> SETUP_SAVE_TIMER\r\n");
+		g_timer.KillTimer(SETUP_SAVE_TIMER);
+		g_setup_data.SaveSetupData();
 		break;
 	default:
 	//	DBGMSG(1, "--> DEFAULT_TIMER\r\n");

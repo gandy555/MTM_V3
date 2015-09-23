@@ -305,8 +305,9 @@ void SetVolume(UINT nVolumeLevel)
 	char wm9713_volume[9][6] = { "f0f0\0", "1818\0", "1212\0", "1010\0", "0808\0", "0707\0", "0606\0", "0303\0", "0000\0" };
 	char cmd[128] = {0,};
 
-	if(nVolumeLevel <= MAX_VOLUME_LEVEL)
-	{
+	printf("<%s> %d\r\n", __func__, nVolumeLevel);
+	
+	if (nVolumeLevel <= MAX_VOLUME_LEVEL) {
 		sprintf(cmd, "echo %s > /proc/driver/wm9713/04-AC97_HEADPHONE_VOL", wm9713_volume[nVolumeLevel]);
 		system(cmd);
 	//	play_wavplay("/app/sound/touch.wav");

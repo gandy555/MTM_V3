@@ -8,6 +8,7 @@
 #define ELEVATOR_TIMER			3	//엘레베이터 주기적 상태요청 타이머
 #define PARKING_TIMER			4	//주차위치 확인요청 타이머
 #define RESPONSE_TIMER			5	//응답 타이머
+#define SETUP_SAVE_TIMER		6	//설정 저장 타이머 (볼륨 조절 후 30초에 저장 )
 
 #define RETRY_TIMEOUT			0xff
 
