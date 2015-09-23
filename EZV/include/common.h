@@ -74,9 +74,9 @@
 
 //< 버전정보
 #define VER_MAJOR			2					//Mandatory
-#define VER_MINOR			0					//M
+#define VER_MINOR			1					//M
 #define VER_REVISION		' '					//Optional
-#define VER_DATE			"20150724\0"		//M
+#define VER_DATE			"20150923\0"		//M
 #define VER_STRING			"for EZV\0"			//O
 //>
 
