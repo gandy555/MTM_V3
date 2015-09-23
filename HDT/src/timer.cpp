@@ -122,6 +122,9 @@ BOOL CTimer::SetTimer(int id, int second, PFN_TIMER_HANDLER pfnHandler, const ch
 
 void CTimer::KillTimer(int id)
 {
+	time_t now;
+	struct tm *t;
+	
 	if((id<0)||(id>=MAX_TIMER))
 	{
 		DBGMSG(DBG_TIMER, "%s: invalid timer id. valid range is (0~%d)\r\n", __func__, MAX_TIMER-1);
@@ -134,7 +137,10 @@ void CTimer::KillTimer(int id)
 	m_table[id].pParam		= NULL;
 	pthread_mutex_unlock(&m_timer_mutex);
 
-	DBGMSG(DBG_TIMER, "%s: '%s' id=%d was stoped\r\n", __func__, m_table[id].szTimerName, id);
+	now = time(NULL);
+	t = localtime(&now);
+	DBGMSG(DBG_TIMER, "%s: '%s' id=%d was stoped at %02d:%02d:%02d\r\n",
+		__func__, m_table[id].szTimerName, id, t->tm_hour, t->tm_min, t->tm_sec);
 }
 
 void CTimer::ResetTimer(int id)
@@ -220,10 +226,11 @@ void* CTimer::TimerHandler(void *pParam)
 				{
 					if(elapsedTime.tv_sec>=(pThis->m_table[i].second))
 					{
-						if(pThis->m_table[i].pfnHandler)
+						if (pThis->m_table[i].pfnHandler) {
 							pThis->m_table[i].pfnHandler(pThis->m_table[i].pParam);
-						else
+						} else {
 							g_message.SendMessage(MSG_TIMER_EVENT, (ULONG)i, (ULONG)(pThis->m_table[i].pParam));
+						}
 						gettimeofday(&(pThis->m_table[i].start), &tz);
 					}
 				}
