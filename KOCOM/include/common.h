@@ -72,9 +72,9 @@
 
 //< 버전정보
 #define VER_MAJOR			3					//Mandatory
-#define VER_MINOR			03					//M
+#define VER_MINOR			04					//M
 #define VER_REVISION		'A'					//Optional
-#define VER_DATE			"20150810\0"		//M
+#define VER_DATE			"20150923\0"		//M
 #define VER_STRING			"for KOCOM\0"		//O
 //>
 
