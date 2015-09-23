@@ -114,6 +114,9 @@ BOOL CTimer::SetTimer(int id, int second, PFN_TIMER_HANDLER pfnHandler, const ch
 
 void CTimer::KillTimer(int id)
 {
+	time_t now;
+	struct tm *t;
+	
 	if((id<0)||(id>=MAX_TIMER))
 	{
 		printf("%s: invalid timer id. valid range is (0~%d)\r\n", __func__, MAX_TIMER-1);
@@ -124,12 +127,15 @@ void CTimer::KillTimer(int id)
 	m_table[id].pfnHandler	= NULL;
 	m_table[id].pParam		= NULL;
 
-	printf("%s: '%s' id=%d was stoped\r\n", __func__, m_table[id].szTimerName, id);
+	now = time(NULL);
+	t = localtime(&now);
+	printf("%s: '%s' id=%d was stoped at %02d:%02d:%02d\r\n",
+		__func__, m_table[id].szTimerName, id, t->tm_hour, t->tm_min, t->tm_sec);
 }
 
 void CTimer::ResetTimer(int id)
 {
-	struct timezone	tz;
+	struct timezone tz;
 
 	if((id<0)||(id>=MAX_TIMER))
 	{

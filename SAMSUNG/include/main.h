@@ -7,6 +7,7 @@
 #define PARKING_TIMER			3	//주차위치 확인요청 타이머
 #define BACK_LIGHT_TIMER		5	//백라이트 타이머
 #define PARKING_REQ_SPIN_TIMER			6	//주차위치 확인요청 타이머
+#define SETUP_SAVE_TIMER		7	//설정 저장 타이머 (볼륨 조절 후 30초에 저장 )
 
 #define ELEVATOR_REQ_TIME		2	//엘레베이터 상태 모니터링 타임 (응답기준 다음 요청시까지의 시간)
 #define PARKING_REQ_TIME		10	//주차위치 확인대기 타임

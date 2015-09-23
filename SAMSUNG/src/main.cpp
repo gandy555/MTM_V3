@@ -18,6 +18,7 @@
 
 //#define BACKLIGHT_OFF_DISABLE
 
+#define SETUP_SAVE_TIME			30	//  볼륨 변경시 30초 후에 저장 한다.
 //
 // Global Data
 //
@@ -79,6 +80,13 @@ static void error_handler(GR_EVENT *ep);
 void clock_timer_handler(void *pParam);
 void back_light_timer_handler(void *pParam);
 
+void setup_save_timer_handler(void *pParam)
+{
+	printf("<%s>\r\n", __func__);
+	
+	g_timer.KillTimer(SETUP_SAVE_TIMER);
+	g_setup_data.SaveSetupData();
+}
 
 //
 // Main Procedure
@@ -360,6 +368,8 @@ void MainKeyProc(USHORT usKeyFlag, USHORT usKeyEvent)
 						g_setup_data.m_SetupData.volume++;
 						SetVolume(g_setup_data.m_SetupData.volume);
 						PlayWavFile("/app/sound/touch.wav");
+						g_timer.SetTimer(SETUP_SAVE_TIMER, SETUP_SAVE_TIME,
+							setup_save_timer_handler, "Setup Save Timer");
 					}
 				}
 				else if(CHK_FLAG(usKeyFlag, FLAG(GPIO_REAR_VOL_DOWN)))
@@ -369,6 +379,8 @@ void MainKeyProc(USHORT usKeyFlag, USHORT usKeyEvent)
 						g_setup_data.m_SetupData.volume--;
 						SetVolume(g_setup_data.m_SetupData.volume);
 						PlayWavFile("/app/sound/touch.wav");
+						g_timer.SetTimer(SETUP_SAVE_TIMER, SETUP_SAVE_TIME,
+							setup_save_timer_handler, "Setup Save Timer");
 					}
 				}
 				else
