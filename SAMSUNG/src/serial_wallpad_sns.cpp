@@ -849,7 +849,7 @@ void CSerialWallPad_SNS::ResponseProc_WallPadReq(UCHAR* pBuffer)
 	memcpy(&m_WallPadStatus, pRes, sizeof(WALLPAD_STATUS));
 
 	//월패드 정보를 설정공간으로 복사
-	g_setup_data.m_SetupData.alloff_stat	= pRes->alloff_stat;
+	g_setup_data.m_SetupData.alloff_stat	= (pRes->alloff_stat) ? (0):(1);
 	g_setup_data.m_SetupData.gas_stat		= pRes->gas_stat;
 	g_setup_data.m_SetupData.security_stat	= pRes->security_stat;
 

@@ -63,9 +63,9 @@
 
 //< 버전정보
 #define VER_MAJOR			2					//Mandatory
-#define VER_MINOR			35					//M
+#define VER_MINOR			36					//M
 #define VER_REVISION		'A'					//Optional
-#define VER_DATE			"20150923\0"		//M
+#define VER_DATE			"20151006\0"		//M
 #define VER_STRING			"for SHN-8810\0"	//O
 //>
 
