@@ -115,13 +115,23 @@ int CSerial::Read(unsigned char *pBuffer, int size)
 BOOL CSerial::StartListener(PFN_SERIAL_DATA_HANDLER pfnHandler, void* pParam)
 {
 	int create_error;
-
+	struct sched_param param;
+	pthread_attr_t thread_attrs;
+	
 	m_fListenerRunning = TRUE;
 
+	pthread_attr_init(&thread_attrs);           // 스레드 속정 초기화
+
+        /* 스케줄링 정책 속성을 라운드 로빈으로 설정 */
+        pthread_attr_setschedpolicy(&thread_attrs, SCHED_RR);
+
+        param.sched_priority = 50;              // 생성할 스레드의 우선순위 설정
+        pthread_attr_setschedparam(&thread_attrs, &param);  // ?
+        
 	if(pfnHandler)
-		create_error = pthread_create(&m_ListenerThread, NULL, pfnHandler, (pParam) ? pParam : this);
+		create_error = pthread_create(&m_ListenerThread, &thread_attrs, pfnHandler, (pParam) ? pParam : this);
 	else
-		create_error = pthread_create(&m_ListenerThread, NULL, SerialListener, this);
+		create_error = pthread_create(&m_ListenerThread, &thread_attrs, SerialListener, this);
 
 	if(create_error)
 	{

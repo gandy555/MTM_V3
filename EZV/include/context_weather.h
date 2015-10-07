@@ -36,7 +36,7 @@ public:
 	// Member Function
 	//
 	u8 check_update_cond(UINT _cntxt);
-	void update_weather_info(void);
+	void update_new_info(void);
 	
 	// Member Variable
 	BOOL	m_isDoorClose;

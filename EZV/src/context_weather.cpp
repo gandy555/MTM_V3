@@ -201,7 +201,7 @@ u8 CContextWeather::check_update_cond(UINT _cntxt)
 	return 0;
 }
 
-void CContextWeather::update_weather_info(void)
+void CContextWeather::update_new_info(void)
 {
 	m_weather_left = g_setup_data.m_SetupData.weather_left;
 	m_temp_low_left = g_setup_data.m_SetupData.temp_low_left;
@@ -227,7 +227,7 @@ void CContextWeather::Draw(UINT nContextNum)
 		return;
 	}
 
-	update_weather_info();
+	update_new_info();
 	
 	//¹è°æ
 	m_ObjectList.Draw(WEATHER_OBJ_BG);

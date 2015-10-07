@@ -20,10 +20,25 @@
  * Variable Declaration
  *
  ******************************************************************************/
+//---------------------------------------------------------------------------------
+// Function Name  : PRINT_SPENDING_TIME()
+// Description    : 
+//---------------------------------------------------------------------------------
+#define PRINT_SPENDING_TIME(_func)			\
+{											\
+	u32 s_tick, c_tick;							\
+											\
+	s_tick = GetTickCount();					\
+	_func;									\
+	c_tick = GetTickCount();					\
+	printf("[%08d]spending time: %d ms\r\n", c_tick, c_tick - s_tick);	\
+}
 
 #define EZV_HEADER			0xF7
 #define EZV_DEV_ID			0x53
 #define EZV_SUB_ID			0x01
+
+#define MAX_PKT_SIZE	128	//22
 
 #define REQ_ID_IDX		1
 #define REQ_CTRL_IDX	2
@@ -633,7 +648,7 @@ u8 CWallPadEzville::pkt_rcv_n_delimeter(ezv_pkt_info_t *_pkt)
 		READ_BYTE(&_pkt->buffer[_pkt->size]);
 		if (_pkt->buffer[_pkt->size] != EZV_DEV_ID) {
 			_pkt->size = 0;
-			DBGMSG(DBG_WALLPAD, "Invalid Device ID");
+			DBGMSG(DBG_WALLPAD, "Invalid Device ID\r\n");
 			return 0;
 		}
 		_pkt->size++;
@@ -641,18 +656,31 @@ u8 CWallPadEzville::pkt_rcv_n_delimeter(ezv_pkt_info_t *_pkt)
 		READ_BYTE(&_pkt->buffer[_pkt->size]);
 		if (_pkt->buffer[_pkt->size] != EZV_SUB_ID) {
 			_pkt->size = 0;
-			DBGMSG(DBG_WALLPAD, "Invalid Sub ID");
+			DBGMSG(DBG_WALLPAD, "Invalid Sub ID\r\n");
 			return 0;
 		}
 		_pkt->size++;
 	case CMD_TYPE_IDX:	
 		READ_BYTE(&_pkt->buffer[_pkt->size]);
+		if ((_pkt->buffer[_pkt->size] != CMD_STATUS_REQ) &&
+			(_pkt->buffer[_pkt->size] != CMD_WP_STATUS_RES) &&
+			(_pkt->buffer[_pkt->size] != CMD_WP_CTRL_RES)) {
+			_pkt->size = 0;
+			DBGMSG(DBG_WALLPAD, "Invalid CMD TYPE\r\n");
+			return 0;
+		}
 		_pkt->size++;
 	case DATA_LEN_IDX: 
 		READ_BYTE(&_pkt->buffer[_pkt->size]);
+		if (_pkt->buffer[_pkt->size] > MAX_PKT_SIZE) {
+			DBGMSG(DBG_WALLPAD, "Invalid PACKET SIZE(%d)\r\n",
+				_pkt->buffer[_pkt->size]);
+			_pkt->size = 0;
+			return 0;
+		}
 		_pkt->size++;
 	default:	/* data */
-		t_size = _pkt->buffer[4] + 7;
+		t_size = _pkt->buffer[DATA_LEN_IDX] + 7;
 		if (_pkt->size == t_size) 
 			return 1;
 		ret = m_serial.Read(&_pkt->buffer[_pkt->size], t_size-_pkt->size);
@@ -1299,7 +1327,8 @@ void CWallPadEzville::ezv_parser(void)
 	m_isRecv = TRUE;
 
 	if (!pkt_rcv_n_delimeter(pkt)) {
-		//printf("<%s> Data size is not enough!\r\n", __func__);
+		//printf("<%s> Data size is not enough(%d/%d)\r\n",
+			//__func__, pkt->size, pkt->buffer[4]+7);
 		return;
 	}
 
