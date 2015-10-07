@@ -38,6 +38,13 @@ CContextWeather::CContextWeather(GR_WINDOW_ID wid, GR_GC_ID gc)
 	m_wid_ment = 0;
 	m_pixmap_ment = 0;
 
+	m_weather_left = 0;
+	m_temp_low_left = 0;
+	m_temp_high_left = 0;
+	m_weather_right = 0;
+	m_temp_low_right = 0;
+	m_temp_high_right = 0;	
+
 	m_isDoorClose = TRUE;
 }
 
@@ -168,6 +175,42 @@ void CContextWeather::DeInit()
 	m_ObjectList.RemoveAll();
 }
 
+u8 CContextWeather::check_update_cond(UINT _cntxt)
+{
+	if (_cntxt == 0)
+		return 1;
+	
+	if (g_setup_data.m_SetupData.weather_left != m_weather_left)
+		return 1;
+	
+	if (g_setup_data.m_SetupData.temp_low_left != m_temp_low_left)
+		return 1;
+	
+	if (g_setup_data.m_SetupData.temp_high_left != m_temp_high_left)
+		return 1;
+	
+	if (g_setup_data.m_SetupData.weather_right != m_weather_right)
+		return 1;
+	
+	if (g_setup_data.m_SetupData.temp_low_right != m_temp_low_right)
+		return 1;
+	
+	if (g_setup_data.m_SetupData.temp_high_right != m_temp_high_right)
+		return 1;
+
+	return 0;
+}
+
+void CContextWeather::update_weather_info(void)
+{
+	m_weather_left = g_setup_data.m_SetupData.weather_left;
+	m_temp_low_left = g_setup_data.m_SetupData.temp_low_left;
+	m_temp_high_left = g_setup_data.m_SetupData.temp_high_left;
+	m_weather_right = g_setup_data.m_SetupData.weather_right;	
+	m_temp_low_right = g_setup_data.m_SetupData.temp_low_right;	
+	m_temp_high_right = g_setup_data.m_SetupData.temp_high_right;
+}
+
 void CContextWeather::Draw(UINT nContextNum)
 {
 	char szText[64] = {0,};
@@ -179,6 +222,13 @@ void CContextWeather::Draw(UINT nContextNum)
 
 	DBGMSGC(DBG_WEATHER, "++ [%d]\r\n", nContextNum);
 
+	if (!check_update_cond(nContextNum)) {
+		DBGMSGC(DBG_WEATHER, "updated data is not(%d)\r\n", nContextNum);
+		return;
+	}
+
+	update_weather_info();
+	
 	//¹è°æ
 	m_ObjectList.Draw(WEATHER_OBJ_BG);
 

@@ -32,7 +32,12 @@ public:
 
 	virtual void ButtonDown(UINT usGpioFlag, UINT usEventEnum);
 	virtual void ButtonUp(UINT usGpioFlag, UINT usEventEnum);
-
+	//
+	// Member Function
+	//
+	u8 check_update_cond(UINT _cntxt);
+	void update_weather_info(void);
+	
 	// Member Variable
 	BOOL	m_isDoorClose;
 	BOOL	m_isGasOff;
@@ -42,6 +47,13 @@ public:
 
 	int		m_len_ment;
 	int		m_width_ment;
+
+	UINT m_weather_left;
+	int m_temp_low_left;
+	int m_temp_high_left;
+	UINT m_weather_right;
+	int m_temp_low_right;
+	int m_temp_high_right;	
 };
 
 #endif //__CONTEXT_WEATHER_H__

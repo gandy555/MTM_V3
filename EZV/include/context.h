@@ -34,7 +34,6 @@ public:
 //	virtual void ButtonHandler(UINT id);
 
 	void ChangeContext(UINT nContextNum=0);
-
 	// Member Variable
 	UINT				m_nState;
 	UINT				m_nContextNum;
