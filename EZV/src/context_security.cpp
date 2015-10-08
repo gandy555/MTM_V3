@@ -166,6 +166,10 @@ void CContextSecurity::Proc(UINT nContextNum)
 		break;
 	case 1:
 	case 2:
+		if (g_setup_data.m_SetupData.security_stat >= 2) {
+			g_setup_data.m_SetupData.security_stat = 0;
+		}
+
 	//	sprintf(szWaveFilePath, "/app/sound/%s.wav\0", szWaveFile[m_isSecurityOn]);
 		sprintf(szWaveFilePath, "/app/sound/%s.wav\0", szWaveFile[g_setup_data.m_SetupData.security_stat]);
 		PlayWavFile(szWaveFilePath);

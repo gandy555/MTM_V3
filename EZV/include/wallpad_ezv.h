@@ -19,6 +19,7 @@ enum onoff_bit {
 #define EZV_MAX_PKT_SIZE	512
 
 typedef struct {
+	u8 res;
 	int size;
 	u8 buffer[EZV_MAX_PKT_SIZE];
 } ezv_pkt_info_t;
@@ -68,6 +69,9 @@ public:
 	// Member Function
 	//
 	int Write(UCHAR *pData, int size);
+	u8 check_txd_elapsed_time(void);
+	void update_txd_time(void);
+	
 	u8 calc_xor_sum(u8 *_data, UINT _size);
 	u8 calc_add_sum(u8 *_data, UINT _size);
 	void get_request_dummy_data(u8 *_data);
@@ -101,6 +105,7 @@ public:
 	CSerial		m_serial;
 	BOOL		m_isRecv;					//수신중 여부 Flag
 	u8 m_request_id;
+	u32 m_txd_time;
 	pthread_mutex_t m_wp_mutex;
 };
 

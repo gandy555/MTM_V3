@@ -38,7 +38,8 @@
 #define EZV_DEV_ID			0x53
 #define EZV_SUB_ID			0x01
 
-#define MAX_PKT_SIZE	128	//22
+#define MAX_PKT_SIZE			128	//22
+#define MIN_PKT_TX_INTERVAL	10
 
 #define REQ_ID_IDX		1
 #define REQ_CTRL_IDX	2
@@ -85,6 +86,13 @@ enum request_list {
 	RQL_WEATHER,
 	RQL_PARKING,
 	MAX_RQL
+};
+
+enum {
+	PARSE_RES_OK = 0,
+	PARSE_RES_ERR,
+	PARSE_RES_DOING,
+	PARSE_RES_NOTHING,
 };
 
 #define CMD_STATUS_REQ		0x01
@@ -180,6 +188,7 @@ CWallPadEzville::CWallPadEzville()
 	m_request_id = 0;
 	m_isRecv = 0;
 
+	m_txd_time = 0;
 	g_dummy_req_idx = 3;	
 	memset(&g_dummy_req_list, 0, 4*sizeof(struct dummy_req_info));
 
@@ -326,10 +335,23 @@ void CWallPadEzville::RequestParkingInfo()
 	register_request_data(RQL_PARKING, RQL_STATUS, 0, REQ_RETRY_CNT);
 }
 
+u8 CWallPadEzville::check_txd_elapsed_time(void)
+{
+	if (GetElapsedTick(m_txd_time) > MIN_PKT_TX_INTERVAL)
+		return 1;
+
+	return 0;
+}
+
+void CWallPadEzville::update_txd_time(void)
+{
+	m_txd_time = GetTickCount();
+}
+
 void CWallPadEzville::get_request_dummy_data(u8 *_data)
 {
-	printf("<%s> %d: %d\r\n", __func__,
-		g_dummy_req_idx, g_dummy_req_list[g_dummy_req_idx].cnt);
+	//printf("<%s> %d: %d\r\n", __func__,
+		//g_dummy_req_idx, g_dummy_req_list[g_dummy_req_idx].cnt);
 
 	m_request_id = 0;
 	memcpy(_data, g_dummy_req_list[g_dummy_req_idx].data, STATUS_REQ_SIZE);
@@ -531,8 +553,14 @@ int CWallPadEzville::Write(UCHAR *pData, int size)
 	CContextSetup* pContextSetup = NULL;
 	int ret = ERROR;
 	ULONG ulTick, delay;
+	
+	if (!check_txd_elapsed_time()) {
+		DBGMSG(DBG_WALLPAD, "<%s> elapsed time error\r\n", __func__);
+		return 0;
+	}
 
 	if (m_serial.IsOpen()) {
+#if 0		
 		DBGMSG(DBG_WALLPAD, "[WallPad:EZV] Write\r\n");
 		DBGDMP(DBG_WALLPAD, pData, size, TRUE);
 
@@ -545,7 +573,7 @@ int CWallPadEzville::Write(UCHAR *pData, int size)
 				return -1;
 			}
 		}
-
+#endif
 		// 485 Enable
 		g_gpio_mtm.SetGpioOutPin(GPIO_RS485_CTRL, LOW);
 
@@ -558,7 +586,7 @@ int CWallPadEzville::Write(UCHAR *pData, int size)
 		}
 
 		//마지막 패킷 전송후 TX Disable 하기까지 지연 (패킷사이즈 전송시간 + 1.5[ms])
-		delay = (size * 1042) + 10;	// 9600[bps]에서 1start+8bit+1stop 전송속도는 1.04167[ms] 이므로 21 byte는 21.875[ms]
+		delay = (size * 1042) + 1500;	// 9600[bps]에서 1start+8bit+1stop 전송속도는 1.04167[ms] 이므로 21 byte는 21.875[ms]
 		usleep(delay);
 
 		// 485 Disable
@@ -574,6 +602,8 @@ int CWallPadEzville::Write(UCHAR *pData, int size)
 	#endif
 	}
 
+	update_txd_time();
+	
 	return ret;
 }
 
@@ -637,6 +667,7 @@ u8 CWallPadEzville::pkt_rcv_n_delimeter(ezv_pkt_info_t *_pkt)
 
 	switch (_pkt->size) {
 	case HEADER_IDX:
+		_pkt->res = PARSE_RES_NOTHING;
 		while (1) {
 			READ_BYTE(&_pkt->buffer[0]);
 			if (_pkt->buffer[0] == EZV_HEADER) {
@@ -644,10 +675,12 @@ u8 CWallPadEzville::pkt_rcv_n_delimeter(ezv_pkt_info_t *_pkt)
 				break;
 			}
 		}
+		_pkt->res = PARSE_RES_DOING;
 	case DEV_ID_IDX:
 		READ_BYTE(&_pkt->buffer[_pkt->size]);
 		if (_pkt->buffer[_pkt->size] != EZV_DEV_ID) {
 			_pkt->size = 0;
+			_pkt->res = PARSE_RES_ERR;
 			DBGMSG(DBG_WALLPAD, "Invalid Device ID\r\n");
 			return 0;
 		}
@@ -656,6 +689,7 @@ u8 CWallPadEzville::pkt_rcv_n_delimeter(ezv_pkt_info_t *_pkt)
 		READ_BYTE(&_pkt->buffer[_pkt->size]);
 		if (_pkt->buffer[_pkt->size] != EZV_SUB_ID) {
 			_pkt->size = 0;
+			_pkt->res = PARSE_RES_ERR;
 			DBGMSG(DBG_WALLPAD, "Invalid Sub ID\r\n");
 			return 0;
 		}
@@ -666,6 +700,7 @@ u8 CWallPadEzville::pkt_rcv_n_delimeter(ezv_pkt_info_t *_pkt)
 			(_pkt->buffer[_pkt->size] != CMD_WP_STATUS_RES) &&
 			(_pkt->buffer[_pkt->size] != CMD_WP_CTRL_RES)) {
 			_pkt->size = 0;
+			_pkt->res = PARSE_RES_ERR;
 			DBGMSG(DBG_WALLPAD, "Invalid CMD TYPE\r\n");
 			return 0;
 		}
@@ -676,21 +711,27 @@ u8 CWallPadEzville::pkt_rcv_n_delimeter(ezv_pkt_info_t *_pkt)
 			DBGMSG(DBG_WALLPAD, "Invalid PACKET SIZE(%d)\r\n",
 				_pkt->buffer[_pkt->size]);
 			_pkt->size = 0;
+			_pkt->res = PARSE_RES_ERR;
 			return 0;
 		}
 		_pkt->size++;
 	default:	/* data */
 		t_size = _pkt->buffer[DATA_LEN_IDX] + 7;
-		if (_pkt->size == t_size) 
+		if (_pkt->size == t_size) {
+			_pkt->res = PARSE_RES_OK;
 			return 1;
+		}
 		ret = m_serial.Read(&_pkt->buffer[_pkt->size], t_size-_pkt->size);
 		if (ret > 0)
 			_pkt->size = _pkt->size + ret;		
-		if (_pkt->size == t_size) 
+		if (_pkt->size == t_size) {
+			_pkt->res = PARSE_RES_OK;
 			return 1;
+		}
 		break;
 	}
-	
+
+	_pkt->res = PARSE_RES_DOING;	
 	return 0;
 }
 
@@ -701,14 +742,14 @@ u8 CWallPadEzville::pkt_verify(ezv_pkt_info_t *_pkt)
 	xor_sum = calc_xor_sum(_pkt->buffer, _pkt->size);
 	if (xor_sum != _pkt->buffer[_pkt->size-2]) {
 		DBGMSG(DBG_WALLPAD, "<%s> Invalid xor sum(0x%X / 0x%X)\r\n",
-			__func__, xor_sum, _pkt->buffer[_pkt->size-2]);
+			__func__, _pkt->buffer[_pkt->size-2], xor_sum);
 		return 0;
 	}
 
 	add_sum = calc_add_sum(_pkt->buffer, _pkt->size);
 	if (add_sum != _pkt->buffer[_pkt->size-1]) {
 		DBGMSG(DBG_WALLPAD, "<%s> Invalid add sum(0x%X / 0x%X)\r\n",
-			__func__, add_sum, _pkt->buffer[_pkt->size-1]);
+			__func__, _pkt->buffer[_pkt->size-1], add_sum);
 		return 0;
 	}
 	
@@ -942,7 +983,7 @@ void CWallPadEzville::update_elevator_info(u8 *_pkt)
 	if (m_request_id != RQ_ID_ELEVATOR) {
 		if ((ev_status == g_setup_data.m_SetupData.elevator_status) &&
 			(ev_floor == g_setup_data.m_SetupData.elevator_floor)) {
-			printf("Aleady Seted \r\n", __func__);
+			printf("<%s> Aleady Seted \r\n", __func__);
 			return;
 		}
 	}
@@ -1070,7 +1111,7 @@ u8 CWallPadEzville::wp_polling_pkt(u8 *_pkt)
 {
 	ezv_pkt_info_t *pkt = &g_send_pkt;
 	u8 data[5] = {0,};
-	
+
 	if (!get_request_data(RQL_CONTROL, data)) {
 		if (!get_request_data(RQL_STATUS, data)) 
 			get_request_dummy_data(data);
@@ -1082,14 +1123,16 @@ u8 CWallPadEzville::wp_polling_pkt(u8 *_pkt)
 
 	if (Write(pkt->buffer, pkt->size) <= 0) {
 		DBGMSG(DBG_WALLPAD, "<%s> Write Faile\r\n", __func__);
-	}	
+	}
+
+	return 1;
 }
 
 u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 {
 	ezv_pkt_info_t *pkt = &g_send_pkt;
 	u8 rsp_data[64] = {0,};
-	
+
 	switch (_pkt[DATA_0_IDX]) {
 	case WCP_SWITCH:
 		rsp_data[0] = 0;	// OK
@@ -1099,7 +1142,7 @@ u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 		build_pkt(pkt, CMD_WP_STATUS_ACK, rsp_data, 4);		
 		usleep(PKT_WAIT_TIME);	
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if (m_request_id == RQ_ID_SWITCH)
 			delete_request_data(RQL_STATUS);
@@ -1113,7 +1156,7 @@ u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 		build_pkt(pkt, CMD_WP_STATUS_ACK, rsp_data, 4);			
 		usleep(PKT_WAIT_TIME);	
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if (m_request_id == RQ_ID_GAS)
 			delete_request_data(RQL_STATUS);
@@ -1127,7 +1170,7 @@ u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 		build_pkt(pkt, CMD_WP_STATUS_ACK, rsp_data, 4);	
 		usleep(PKT_WAIT_TIME);	
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if (m_request_id == RQ_ID_SECURITY)
 			delete_request_data(RQL_STATUS);
@@ -1144,7 +1187,7 @@ u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 		build_pkt(pkt, CMD_WP_STATUS_ACK, rsp_data, 7);
 		usleep(PKT_WAIT_TIME);	
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if (m_request_id == RQ_ID_ELEVATOR)
 			delete_request_data(RQL_STATUS);
@@ -1158,7 +1201,7 @@ u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 		build_pkt(pkt, CMD_WP_STATUS_ACK, rsp_data, 4);	
 		usleep(PKT_WAIT_TIME);	
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if (m_request_id == RQ_ID_WEATHER)
 			delete_request_data(RQL_STATUS);		
@@ -1172,7 +1215,7 @@ u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 		build_pkt(pkt, CMD_WP_STATUS_ACK, rsp_data, 4);	
 		usleep(PKT_WAIT_TIME);	
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if (m_request_id == RQ_ID_PARKING)
 			delete_request_data(RQL_STATUS);		
@@ -1188,7 +1231,7 @@ u8 CWallPadEzville::wp_status_pkt(u8 *_pkt, int _size)
 		build_pkt(pkt, CMD_WP_STATUS_ACK, rsp_data, 4);
 		usleep(PKT_WAIT_TIME);	
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if (m_request_id == RQ_ID_DOOR)
 			delete_request_data(RQL_STATUS);		
@@ -1248,7 +1291,7 @@ u8 CWallPadEzville::wp_ctrl_pkt(u8 *_pkt)
 		build_pkt(pkt, CMD_WP_CTRL_ACK, rsp_data, 4);		
 		usleep(PKT_WAIT_TIME);
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}	
 		if (res)
 			delete_request_data(RQL_CONTROL);
@@ -1266,7 +1309,7 @@ u8 CWallPadEzville::wp_ctrl_pkt(u8 *_pkt)
 		build_pkt(pkt, CMD_WP_CTRL_ACK, rsp_data, 4);	
 		usleep(PKT_WAIT_TIME);
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}	
 		if (res) {
 			delete_request_data(RQL_CONTROL);
@@ -1286,7 +1329,7 @@ u8 CWallPadEzville::wp_ctrl_pkt(u8 *_pkt)
 		build_pkt(pkt, CMD_WP_CTRL_ACK, rsp_data, 4);	
 		usleep(PKT_WAIT_TIME);
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}			
 		if (res) {
 			delete_request_data(RQL_CONTROL);
@@ -1302,7 +1345,7 @@ u8 CWallPadEzville::wp_ctrl_pkt(u8 *_pkt)
 		build_pkt(pkt, CMD_WP_CTRL_ACK, rsp_data, 4);			
 		usleep(PKT_WAIT_TIME);
 		if (Write(pkt->buffer, pkt->size) <= 0) {
-			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n");
+			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}
 		if ((res) && (CHECK_RQL(ctrl_data[REQ_ID_IDX], RQL_ELEVATOR)))  {
 			delete_request_data(RQL_CONTROL);		
@@ -1325,20 +1368,20 @@ void CWallPadEzville::ezv_parser(void)
 	int ret;
 
 	m_isRecv = TRUE;
-
 	if (!pkt_rcv_n_delimeter(pkt)) {
-		//printf("<%s> Data size is not enough(%d/%d)\r\n",
-			//__func__, pkt->size, pkt->buffer[4]+7);
+#if 0		
+		printf("<%s> Data size is not enough(%d/%d)\r\n",
+			__func__, pkt->size, pkt->buffer[4]+7);
+#endif		
 		return;
 	}
-
+	m_isRecv = FALSE;
+	
 	if (!pkt_verify(pkt)) {
 		memset(pkt, 0, sizeof(ezv_pkt_info_t));
 		return;
 	}
 	
-	m_isRecv = FALSE;
-
 	switch (pkt->buffer[CMD_TYPE_IDX]) {
 	case CMD_STATUS_REQ:
 		wp_polling_pkt(pkt->buffer);

@@ -145,6 +145,9 @@ void CContextLight::Proc(UINT nContextNum)
 		break;
 	case 1:
 	case 2:
+		if (g_setup_data.m_SetupData.light_stat >= 2) {
+			g_setup_data.m_SetupData.light_stat = 0;
+		}
 		sprintf(szWaveFilePath, "/app/sound/%s.wav\0", szWaveFile[g_setup_data.m_SetupData.light_stat]);
 		PlayWavFile(szWaveFilePath);
 	//	g_gpio_mtm.SetGpioOutPin(GPIO_RELAY, (g_setup_data.m_SetupData.light_stat) ? LOW : HIGH);	//LOW=소등, HIGH=소등해제

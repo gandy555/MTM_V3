@@ -263,39 +263,25 @@ UCHAR CalcCheckSum(UCHAR* pBuffer, UINT size)
 	tick count는 0 ~ 86399999 (1일)
 */
 #define MAX_TICK	86400000
-ULONG GetTickCount()
+u32 GetTickCount()
 {
-	struct timeval  tv;
-	struct timezone	tz;
-	ULONG ulTick;
-	double d;
+	struct timespec ts;
+	u32 c_tick;
 
-	gettimeofday(&tv, &tz);
+	clock_gettime(CLOCK_MONOTONIC, &ts);
 
-	// tv_sec값을 1일단위(86400초)로 자른다음 ms로 환산하고
-	// tv_usec값도 ms로 환산하여 더한값을 tick count로 한다
-#if 1
-	ulTick = (tv.tv_sec % 86400)*1000 + tv.tv_usec/1000;
-#else
-	d = tv.tv_sec / 86400.0;
-	ulTick = (ULONG)((d - (ULONG)d)*86400.0)*1000 + tv.tv_usec/1000;
-#endif
-
-	return ulTick;
+	c_tick = (ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
+	
+	return c_tick;
 }
 
-ULONG GetElapsedTick(ULONG ulStartTick)
+u32 GetElapsedTick(ULONG ulStartTick)
 {
-	ULONG ulCurrentTick, ulElpasedTick;
-
-	if(ulStartTick > MAX_TICK) return 0;	//Error Case
+	u32 ulCurrentTick, ulElpasedTick;
 
 	ulCurrentTick = GetTickCount();
 
-	if(ulCurrentTick >= ulStartTick)
-		ulElpasedTick = ulCurrentTick - ulStartTick;
-	else
-		ulElpasedTick = MAX_TICK - ulStartTick + ulCurrentTick;
+	ulElpasedTick = ulCurrentTick - ulStartTick;
 
 	return ulElpasedTick;
 }

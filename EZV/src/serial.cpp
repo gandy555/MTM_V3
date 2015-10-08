@@ -35,7 +35,7 @@ BOOL CSerial::Open(const char *pszDev, unsigned int baudRate)
 		return FALSE;
 	}
 
-	m_fdDev = open(pszDev, O_RDWR);
+	m_fdDev = open(pszDev, O_RDWR|O_NONBLOCK|O_DIRECT);
 	if(m_fdDev == ERROR)
 	{
 		DBGMSG(DBG_ERROR, "%s: '%s' device open failure\r\n", __func__, pszDev);
@@ -88,6 +88,7 @@ int CSerial::Write(const unsigned char *pszBuffer, int size)
 			DBGMSG(DBG_ERROR, "%s: write failure : errno=%d %s\r\n", __func__, errno, strerror(errno));
 			return ERROR;
 		}
+		tcflush(m_fdDev, TCIFLUSH); 
 		//printf("%s: write success\r\n", __func__);
 	}
 
@@ -98,15 +99,8 @@ int CSerial::Read(unsigned char *pBuffer, int size)
 {
 	int ret = ERROR;
 
-	if(m_fdDev>=0)
-	{
+	if (m_fdDev>=0) {
 		ret = read(m_fdDev, pBuffer, size);
-		if(ret == ERROR)
-		{
-			DBGMSG(DBG_ERROR, "%s: read failure : errno=%d %s\r\n", __func__, errno, strerror(errno));
-			return ERROR;
-		}
-		//printf("%s: read success\r\n", __func__);
 	}
 
 	return ret;

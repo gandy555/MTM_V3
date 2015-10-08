@@ -74,9 +74,9 @@
 
 //< 버전정보
 #define VER_MAJOR			2					//Mandatory
-#define VER_MINOR			2					//M
+#define VER_MINOR			5					//M
 #define VER_REVISION		' '					//Optional
-#define VER_DATE			"20151008\0"		//M
+#define VER_DATE			"20151009\0"		//M
 #define VER_STRING			"for EZV\0"			//O
 //>
 
@@ -115,8 +115,8 @@ BOOL isLeapYear(int year);
 void CalcDate(struct tm* t, int day);
 UCHAR CalcCheckSum(UCHAR* pBuffer, UINT size);
 
-ULONG GetTickCount();
-ULONG GetElapsedTick(ULONG ulStartTick);
+u32 GetTickCount();
+u32 GetElapsedTick(ULONG ulStartTick);
 
 void SetVolume(UINT nVolumeLevel);
 void PlayWavFile(const char* pszWavFileName);
