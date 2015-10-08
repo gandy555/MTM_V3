@@ -32,6 +32,8 @@ public:
 	virtual void ButtonDown(UINT usGpioFlag, UINT usEventEnumd);
 	virtual void ButtonUp(UINT usGpioFlag, UINT usEventEnum);
 //	virtual void ButtonHandler(UINT id);
+	virtual u8 check_update_cond(UINT _cntxt);
+	virtual void update_new_info(void);
 
 	void ChangeContext(UINT nContextNum=0);
 	// Member Variable

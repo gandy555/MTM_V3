@@ -32,11 +32,8 @@ public:
 
 	virtual void ButtonDown(UINT usGpioFlag, UINT usEventEnum);
 	virtual void ButtonUp(UINT usGpioFlag, UINT usEventEnum);
-	//
-	// Member Function
-	//
-	u8 check_update_cond(UINT _cntxt);
-	void update_new_info(void);
+	virtual u8 check_update_cond(UINT _cntxt);
+	virtual void update_new_info(void);
 	
 	// Member Variable
 	BOOL	m_isDoorClose;

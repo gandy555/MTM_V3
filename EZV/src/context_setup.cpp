@@ -58,6 +58,16 @@ void CContextSetup::DeInit()
 	CContext::DeInit();
 }
 
+u8 CContextSetup::check_update_cond(UINT _cntxt)
+{
+	return 1;
+}
+
+void CContextSetup::update_new_info(void)
+{
+
+}
+
 void CContextSetup::Draw(UINT nContextNum)
 {
 	RECT rcText;

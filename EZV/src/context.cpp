@@ -101,6 +101,15 @@ void CContext::DeInit()
 #endif
 }
 
+u8 CContext::check_update_cond(UINT _cntxt)
+{
+}
+
+void CContext::update_new_info(void)
+{
+
+}
+
 void CContext::Draw(UINT nContextNum)
 {
 }

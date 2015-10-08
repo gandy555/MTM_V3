@@ -72,6 +72,16 @@ void CContextSecurity::DeInit()
 	m_ObjectList.RemoveAll();
 }
 
+u8 CContextSecurity::check_update_cond(UINT _cntxt)
+{
+	return 1;
+}
+
+void CContextSecurity::update_new_info(void)
+{
+
+}
+
 void CContextSecurity::Draw(UINT nContextNum)
 {
 	CObjectIcon* pObjectIcon = NULL;

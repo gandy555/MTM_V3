@@ -223,7 +223,7 @@ void CContextWeather::Draw(UINT nContextNum)
 	DBGMSGC(DBG_WEATHER, "++ [%d]\r\n", nContextNum);
 
 	if (!check_update_cond(nContextNum)) {
-		DBGMSGC(DBG_WEATHER, "updated data is not(%d)\r\n", nContextNum);
+		DBGMSGC(DBG_PARKING, "update has aleady been\r\n");	
 		return;
 	}
 

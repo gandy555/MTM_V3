@@ -69,6 +69,16 @@ void CContextLight::DeInit()
 	m_ObjectList.RemoveAll();
 }
 
+u8 CContextLight::check_update_cond(UINT _cntxt)
+{
+	return 1;
+}
+
+void CContextLight::update_new_info(void)
+{
+
+}
+
 //램프가 켜져있다는것은 일괄소등 SW가 OFF됬다는 뜻
 void CContextLight::Draw(UINT nContextNum)
 {

@@ -72,6 +72,16 @@ void CContextGas::DeInit()
 	m_ObjectList.RemoveAll();
 }
 
+u8 CContextGas::check_update_cond(UINT _cntxt)
+{
+	return 1;
+}
+
+void CContextGas::update_new_info(void)
+{
+
+}
+
 void CContextGas::Draw(UINT nContextNum)
 {
 	CObjectIcon* pObjectIcon;

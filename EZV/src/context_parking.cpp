@@ -1,14 +1,13 @@
 /*
 */
 #include "common.h"
-#include "context_parking.h"
 #include "main.h"
-
+#include "context_parking.h"
 
 //
 // Global Varialble
 //
-
+static MTM_DATA_PARKING g_curr_parking_info[MAX_PARKING_LIST];
 
 //
 // Construction/Destruction
@@ -23,12 +22,9 @@ CContextParking::CContextParking(GR_WINDOW_ID wid, GR_GC_ID gc)
 	m_isParkingInfoRequest = FALSE;
 //	m_isParkingInfo = FALSE;
 
-/*
-	for(i=0; i<MAX_PARKING_HISTORY; i++)
-	{
-		g_ParkingHistory[i].status = MTM_DATA_PARKING_STATUS_NOINFO;
+	for (i=0; i<MAX_PARKING_LIST; i++) {
+		g_curr_parking_info[i].status = MTM_DATA_PARKING_STATUS_NOINFO;
 	}
-*/
 }
 
 CContextParking::~CContextParking()
@@ -82,6 +78,34 @@ void CContextParking::DeInit()
 	m_ObjectList.RemoveAll();
 }
 
+u8 CContextParking::check_update_cond(UINT _cntxt)
+{
+	MTM_DATA_PARKING parking_info;
+	int i;
+	
+	if (_cntxt == 0)
+		return 1;
+
+	for (i = 0; i < MAX_PARKING_LIST; i++) {
+		parking_list_get_item(i, &parking_info);
+		if (memcmp(&g_curr_parking_info[i], &parking_info, sizeof(MTM_DATA_PARKING)) != 0)
+			return 1;
+	}
+		
+	return 0;
+}
+
+void CContextParking::update_new_info(void)
+{
+	MTM_DATA_PARKING parking_info;
+	int i;
+	
+	for (i = 0; i < MAX_PARKING_LIST; i++) {
+		parking_list_get_item(i, &parking_info);
+		memcpy(&g_curr_parking_info[i], &parking_info, sizeof(MTM_DATA_PARKING));
+	}
+}
+
 void CContextParking::Draw(UINT nContextNum)
 {
 	MTM_DATA_PARKING parking_info;
@@ -91,7 +115,14 @@ void CContextParking::Draw(UINT nContextNum)
 	if(m_gc==0) return;
 
 	DBGMSGC(DBG_PARKING, "++ [%d]\r\n", nContextNum);
+	
+	if (!check_update_cond(nContextNum)) {
+		DBGMSGC(DBG_PARKING, "update has aleady been\r\n");
+		return;
+	}
 
+	update_new_info();
+	
 	//¹è°æ
 	m_ObjectList.Draw(PARKING_OBJ_BG);
 

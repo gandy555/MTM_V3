@@ -158,6 +158,16 @@ void CContextElevator::DeInit()
 	m_ObjectList.RemoveAll();
 }
 
+u8 CContextElevator::check_update_cond(UINT _cntxt)
+{
+	return 1;
+}
+
+void CContextElevator::update_new_info(void)
+{
+
+}
+
 void CContextElevator::Draw(UINT nContextNum)
 {
 	CObjectIcon* pObjectIcon = NULL;
