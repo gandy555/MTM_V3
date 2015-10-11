@@ -65,8 +65,8 @@ void CWatchdog::SetPeriod(UINT msPeriod)
 		{
 			msPeriod = MAX_WATCHDOG_PERIOD;
 		}
-		m_pWatchdog->rWTDAT = TICKS_PER_SECOND / 1000 * msPeriod;
-		m_pWatchdog->rWTCNT = TICKS_PER_SECOND / 1000 * msPeriod;
+		m_pWatchdog->rWTDAT = (TICKS_PER_SECOND / 1000) * msPeriod;
+		m_pWatchdog->rWTCNT = (TICKS_PER_SECOND / 1000) * msPeriod;
 	}
 }
 

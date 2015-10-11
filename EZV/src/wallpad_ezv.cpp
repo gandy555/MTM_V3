@@ -818,7 +818,7 @@ void CWallPadEzville::update_weather_info(u8 *pBuffer)
 	int i, temperature;
 
 	printf("<%s>\r\n", __func__);
-	
+
 	pMtmHdr->type = MTM_DATA_TYPE_WEATHER;
 	pMtmHdr->len  = sizeof(MTM_DATA_WEATHER);
 

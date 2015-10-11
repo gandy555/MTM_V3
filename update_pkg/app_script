@@ -31,11 +31,16 @@ insmod /app/dev_gpio.ko
 ## microwave init
 insmod /app/gadc.ko
 mknod /dev/adc c 10 131
+mknod /dev/uba1 b 180 1
 
 ## usb mount
-if [ -d /sys/block/sda ]; then
-
+if [ -d /sys/block/sda ] || [ -d /sys/block/uba ]
+then
+	if [ -d /sys/block/sda ]; then
 	mount -t vfat /dev/sda1 /mnt/usb
+	else
+	mount -t vfat /dev/uba1 /mnt/usb
+	fi
 	
 	echo "######## execute update1 binry ########"
 	/app/update1 &
@@ -131,10 +136,9 @@ else
 	if [ -f /app/sound.done ]; then
 		rm -f /app/sound.done
 	fi
-
+	
 	echo "######## duotech c progream start ########"
 #	/app/ucostech &
 	/app/mts_main &
-
 fi
 
