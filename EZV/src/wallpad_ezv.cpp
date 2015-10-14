@@ -1331,10 +1331,10 @@ u8 CWallPadEzville::wp_ctrl_pkt(u8 *_pkt)
 		if (Write(pkt->buffer, pkt->size) <= 0) {
 			DBGMSG(DBG_WALLPAD, "<%s> Send ACK Packet Fail\r\n", __func__);
 		}			
-		if (res) {
+		//if (res) {
 			delete_request_data(RQL_CONTROL);
 			update_security_info(_pkt[DATA_1_IDX]);
-		}
+		//}
 		break;
 	case MCP_ELEVATOR:
 		/* [DATA_1_IDX]  È£Ãâ (0x01) µµÂø (0x02) */
